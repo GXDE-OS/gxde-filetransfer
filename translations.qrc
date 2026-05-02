@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/translations">
+        <file>translations/remote-file-dtk2_zh_CN.qm</file>
+    </qresource>
+</RCC>

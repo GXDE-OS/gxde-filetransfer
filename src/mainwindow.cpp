@@ -5,7 +5,11 @@
 #include <DSuggestButton>
 
 #include <QComboBox>
+#include <QCheckBox>
+#include <QDesktopServices>
 #include <QDateTime>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QDir>
 #include <QFileInfo>
 #include <QGroupBox>
@@ -13,8 +17,10 @@
 #include <QHeaderView>
 #include <QIcon>
 #include <QMenu>
+#include <QMimeData>
 #include <QMessageBox>
 #include <QPoint>
+#include <QProgressBar>
 #include <QSettings>
 #include <QSpinBox>
 #include <QSplitter>
@@ -26,6 +32,7 @@ DWIDGET_USE_NAMESPACE
 MainWindow::MainWindow(QWidget *parent)
     : DMainWindow(parent)
     , m_client(new RemoteClient(this))
+    , m_transferClient(new RemoteClient(this))
 {
     titlebar()->setTitle(tr("Remote File DTK2"));
     titlebar()->setSeparatorVisible(true);
@@ -42,13 +49,23 @@ MainWindow::MainWindow(QWidget *parent)
     setCentralWidget(central);
 
     connect(m_client, &RemoteClient::started, this, [this](const QString &url) {
-        setBusy(true);
+        setBrowsingBusy(true);
         m_remoteStatusLabel->setText(tr("Working on %1").arg(url));
     });
     connect(m_client, &RemoteClient::listed, this, &MainWindow::showEntries);
     connect(m_client, &RemoteClient::transferFinished, this, &MainWindow::showTransferFinished);
     connect(m_client, &RemoteClient::failed, this, &MainWindow::showError);
     connect(m_client, &RemoteClient::logMessage, this, &MainWindow::appendLog);
+
+    connect(m_transferClient, &RemoteClient::started, this, [this](const QString &url) {
+        setTransferBusy(true);
+        appendLog(tr("Transfer started: %1").arg(url));
+    });
+    connect(m_transferClient, &RemoteClient::transferProgress, this, &MainWindow::showTransferProgress);
+    connect(m_transferClient, &RemoteClient::transferFinished, this, &MainWindow::showTransferFinished);
+    connect(m_transferClient, &RemoteClient::cancelled, this, &MainWindow::showTransferCancelled);
+    connect(m_transferClient, &RemoteClient::failed, this, &MainWindow::showError);
+    connect(m_transferClient, &RemoteClient::logMessage, this, &MainWindow::appendLog);
 
     loadSavedSites();
     updateDefaultPort();
@@ -78,6 +95,8 @@ QWidget *MainWindow::createConnectionBar()
     m_remotePathEdit->setPlaceholderText(tr("Remote path"));
     m_saveSiteButton = new DPushButton(tr("Save"), bar);
     m_connectButton = new DSuggestButton(tr("Connect"), bar);
+    m_saveSiteButton->setIcon(QIcon::fromTheme(QStringLiteral("document-save")));
+    m_connectButton->setIcon(QIcon::fromTheme(QStringLiteral("network-connect")));
 
     layout->addWidget(m_siteCombo);
     layout->addWidget(m_protocolCombo);
@@ -105,6 +124,7 @@ QWidget *MainWindow::createBrowser()
 
     files->addWidget(createLocalPane());
     files->addWidget(createRemotePane());
+    files->setChildrenCollapsible(false);
     files->setStretchFactor(0, 1);
     files->setStretchFactor(1, 1);
 
@@ -125,6 +145,7 @@ QWidget *MainWindow::createBrowser()
 
     vertical->addWidget(files);
     vertical->addWidget(bottom);
+    vertical->setChildrenCollapsible(false);
     vertical->setStretchFactor(0, 4);
     vertical->setStretchFactor(1, 1);
     return vertical;
@@ -141,6 +162,8 @@ QWidget *MainWindow::createLocalPane()
     m_localPathEdit = new QLineEdit(QDir::homePath(), pane);
     m_localUpButton = new QPushButton(tr("Up"), pane);
     m_uploadButton = new DPushButton(tr("Upload >"), pane);
+    m_localUpButton->setIcon(QIcon::fromTheme(QStringLiteral("go-up")));
+    m_uploadButton->setIcon(QIcon::fromTheme(QStringLiteral("go-next")));
     tools->addWidget(m_localStatusLabel);
     tools->addWidget(m_localPathEdit, 1);
     tools->addWidget(m_localUpButton);
@@ -155,7 +178,13 @@ QWidget *MainWindow::createLocalPane()
     m_localView->setSelectionMode(QAbstractItemView::SingleSelection);
     m_localView->setAlternatingRowColors(true);
     m_localView->setContextMenuPolicy(Qt::CustomContextMenu);
-    m_localView->header()->setStretchLastSection(true);
+    m_localView->setDragEnabled(true);
+    m_localView->header()->setStretchLastSection(false);
+    m_localView->header()->setSectionResizeMode(QHeaderView::Interactive);
+    m_localView->setColumnWidth(0, 260);
+    m_localView->setColumnWidth(1, 90);
+    m_localView->setColumnWidth(2, 120);
+    m_localView->viewport()->installEventFilter(this);
 
     layout->addLayout(tools);
     layout->addWidget(m_localView, 1);
@@ -179,6 +208,9 @@ QWidget *MainWindow::createRemotePane()
     m_remoteUpButton = new QPushButton(tr("Up"), pane);
     m_remoteRefreshButton = new QPushButton(tr("Refresh"), pane);
     m_downloadButton = new DPushButton(tr("< Download"), pane);
+    m_remoteUpButton->setIcon(QIcon::fromTheme(QStringLiteral("go-up")));
+    m_remoteRefreshButton->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
+    m_downloadButton->setIcon(QIcon::fromTheme(QStringLiteral("go-previous")));
     tools->addWidget(m_remoteStatusLabel, 1);
     tools->addWidget(m_remoteUpButton);
     tools->addWidget(m_remoteRefreshButton);
@@ -186,13 +218,20 @@ QWidget *MainWindow::createRemotePane()
 
     m_remoteTable = new QTableWidget(0, 4, pane);
     m_remoteTable->setHorizontalHeaderLabels({tr("Name"), tr("Type"), tr("Size"), tr("Modified")});
-    m_remoteTable->horizontalHeader()->setStretchLastSection(true);
-    m_remoteTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_remoteTable->horizontalHeader()->setStretchLastSection(false);
+    m_remoteTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    m_remoteTable->setColumnWidth(0, 280);
+    m_remoteTable->setColumnWidth(1, 90);
+    m_remoteTable->setColumnWidth(2, 100);
+    m_remoteTable->setColumnWidth(3, 180);
     m_remoteTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_remoteTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_remoteTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_remoteTable->setAlternatingRowColors(true);
     m_remoteTable->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_remoteTable->setAcceptDrops(true);
+    m_remoteTable->viewport()->setAcceptDrops(true);
+    m_remoteTable->viewport()->installEventFilter(this);
 
     layout->addLayout(tools);
     layout->addWidget(m_remoteTable, 1);
@@ -212,14 +251,46 @@ QWidget *MainWindow::createTransferPane()
     layout->setContentsMargins(8, 8, 8, 8);
 
     m_transferTable = new QTableWidget(0, 4, pane);
-    m_transferTable->setHorizontalHeaderLabels({tr("Direction"), tr("Source"), tr("Destination"), tr("Status")});
-    m_transferTable->horizontalHeader()->setStretchLastSection(true);
-    m_transferTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-    m_transferTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    m_transferTable->setHorizontalHeaderLabels({tr("Direction"), tr("Source"), tr("Destination"), tr("Progress")});
+    m_transferTable->horizontalHeader()->setStretchLastSection(false);
+    m_transferTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    m_transferTable->setColumnWidth(0, 100);
+    m_transferTable->setColumnWidth(1, 260);
+    m_transferTable->setColumnWidth(2, 260);
+    m_transferTable->setColumnWidth(3, 150);
     m_transferTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_transferTable->setAlternatingRowColors(true);
+    m_transferTable->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_transferTable, &QTableWidget::customContextMenuRequested, this, &MainWindow::showTransferContextMenu);
     layout->addWidget(m_transferTable);
     return pane;
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_remoteTable->viewport()) {
+        if (event->type() == QEvent::DragEnter) {
+            QDragEnterEvent *dragEvent = static_cast<QDragEnterEvent *>(event);
+            if (dragEvent->mimeData()->hasUrls()) {
+                dragEvent->acceptProposedAction();
+                return true;
+            }
+        } else if (event->type() == QEvent::Drop) {
+            QDropEvent *dropEvent = static_cast<QDropEvent *>(event);
+            const QList<QUrl> urls = dropEvent->mimeData()->urls();
+            if (!urls.isEmpty()) {
+                const QString path = urls.first().toLocalFile();
+                if (!path.isEmpty()) {
+                    m_localView->setCurrentIndex(m_localModel->index(path));
+                    uploadSelected();
+                    dropEvent->acceptProposedAction();
+                    return true;
+                }
+            }
+        }
+    }
+
+    return DMainWindow::eventFilter(watched, event);
 }
 
 RemoteConnection MainWindow::currentConnection() const
@@ -272,6 +343,10 @@ void MainWindow::openRemoteEntry(int row, int column)
 
     const bool isDirectory = nameItem->data(Qt::UserRole + 1).toBool();
     const QString path = nameItem->data(Qt::UserRole).toString();
+    if (nameItem->data(Qt::UserRole + 2).toBool()) {
+        goRemoteUp();
+        return;
+    }
     if (!isDirectory) {
         downloadSelected();
         return;
@@ -285,6 +360,7 @@ void MainWindow::openLocalEntry(const QModelIndex &index)
 {
     const QString path = m_localModel->filePath(index);
     if (!QFileInfo(path).isDir()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
         return;
     }
     m_localPathEdit->setText(path);
@@ -305,9 +381,13 @@ void MainWindow::uploadSelected()
     }
 
     const QString remotePath = joinRemotePath(m_remotePathEdit->text(), info.fileName());
-    addTransferRow(tr("Upload"), localPath, remotePath);
+    if (m_transferClient->isBusy()) {
+        QMessageBox::information(this, tr("Transfer busy"), tr("A transfer is already running. Queueing multiple transfers is not implemented yet."));
+        return;
+    }
+    m_activeTransferRow = addTransferRow(tr("Upload"), localPath, remotePath);
     m_lastTransferWasUpload = true;
-    m_client->upload(currentConnection(), localPath, remotePath);
+    m_transferClient->upload(currentConnection(), localPath, remotePath);
 }
 
 void MainWindow::downloadSelected()
@@ -323,9 +403,32 @@ void MainWindow::downloadSelected()
     }
 
     const QString localPath = QDir(m_localPathEdit->text()).filePath(entry.name);
-    addTransferRow(tr("Download"), entry.path, localPath);
+    if (m_transferClient->isBusy()) {
+        QMessageBox::information(this, tr("Transfer busy"), tr("A transfer is already running. Queueing multiple transfers is not implemented yet."));
+        return;
+    }
+    bool resume = false;
+    if (!confirmDownloadConflict(entry, localPath, &resume)) {
+        return;
+    }
+    m_activeTransferRow = addTransferRow(tr("Download"), entry.path, localPath);
     m_lastTransferWasUpload = false;
-    m_client->download(currentConnection(), entry.path, localPath);
+    m_transferClient->download(currentConnection(), entry.path, localPath, resume);
+}
+
+void MainWindow::openLocalFile()
+{
+    const QString path = selectedLocalPath();
+    if (!path.isEmpty()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+    }
+}
+
+void MainWindow::cancelSelectedTransfer()
+{
+    if (m_transferClient->isBusy()) {
+        m_transferClient->cancel();
+    }
 }
 
 void MainWindow::showLocalContextMenu(const QPoint &pos)
@@ -335,22 +438,26 @@ void MainWindow::showLocalContextMenu(const QPoint &pos)
         m_localView->setCurrentIndex(index);
     }
 
-    QMenu menu(this);
-    QAction *openAction = menu.addAction(tr("Open Folder"));
-    QAction *uploadAction = menu.addAction(tr("Upload File"));
-    menu.addSeparator();
-    QAction *refreshAction = menu.addAction(tr("Refresh"));
-
     const QString path = selectedLocalPath();
     const bool hasSelection = !path.isEmpty();
     const bool isDirectory = hasSelection && QFileInfo(path).isDir();
-    openAction->setEnabled(isDirectory);
-    uploadAction->setEnabled(hasSelection && !isDirectory && !m_client->isBusy());
+
+    QMenu menu(this);
+    QAction *openAction = menu.addAction(isDirectory ? tr("Open Folder") : tr("Open File"));
+    QAction *uploadAction = menu.addAction(tr("Upload File"));
+    menu.addSeparator();
+    QAction *refreshAction = menu.addAction(tr("Refresh"));
+    openAction->setEnabled(hasSelection);
+    uploadAction->setEnabled(hasSelection && !isDirectory && !m_transferClient->isBusy());
 
     QAction *chosen = menu.exec(m_localView->viewport()->mapToGlobal(pos));
-    if (chosen == openAction && isDirectory) {
-        m_localPathEdit->setText(path);
-        m_localView->setRootIndex(m_localModel->index(path));
+    if (chosen == openAction && hasSelection) {
+        if (isDirectory) {
+            m_localPathEdit->setText(path);
+            m_localView->setRootIndex(m_localModel->index(path));
+        } else {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+        }
     } else if (chosen == uploadAction) {
         uploadSelected();
     } else if (chosen == refreshAction) {
@@ -376,7 +483,7 @@ void MainWindow::showRemoteContextMenu(const QPoint &pos)
     QAction *upAction = menu.addAction(tr("Go Up"));
 
     openAction->setEnabled(hasSelection && entry.directory && !m_client->isBusy());
-    downloadAction->setEnabled(hasSelection && !entry.directory && !m_client->isBusy());
+    downloadAction->setEnabled(hasSelection && !entry.directory && !m_transferClient->isBusy());
     refreshAction->setEnabled(!m_client->isBusy());
     upAction->setEnabled(!m_client->isBusy());
 
@@ -390,6 +497,22 @@ void MainWindow::showRemoteContextMenu(const QPoint &pos)
         refreshRemote();
     } else if (chosen == upAction) {
         goRemoteUp();
+    }
+}
+
+void MainWindow::showTransferContextMenu(const QPoint &pos)
+{
+    const int row = m_transferTable->rowAt(pos.y());
+    if (row >= 0) {
+        m_transferTable->selectRow(row);
+    }
+
+    QMenu menu(this);
+    QAction *cancelAction = menu.addAction(tr("Cancel Transfer"));
+    cancelAction->setEnabled(m_transferClient->isBusy());
+    QAction *chosen = menu.exec(m_transferTable->viewport()->mapToGlobal(pos));
+    if (chosen == cancelAction) {
+        cancelSelectedTransfer();
     }
 }
 
@@ -438,20 +561,31 @@ void MainWindow::loadSelectedSite(int index)
 
 void MainWindow::showEntries(const QString &path, const QVector<RemoteEntry> &entries)
 {
-    setBusy(false);
+    setBrowsingBusy(false);
     m_remotePathEdit->setText(path);
-    m_remoteTable->setRowCount(entries.size());
+    m_remoteTable->setRowCount(entries.size() + 1);
+
+    QTableWidgetItem *up = new QTableWidgetItem(QIcon::fromTheme(QStringLiteral("go-up")), QStringLiteral(".."));
+    up->setData(Qt::UserRole, parentPath(path));
+    up->setData(Qt::UserRole + 1, true);
+    up->setData(Qt::UserRole + 2, true);
+    m_remoteTable->setItem(0, 0, up);
+    m_remoteTable->setItem(0, 1, new QTableWidgetItem(tr("Parent")));
+    m_remoteTable->setItem(0, 2, new QTableWidgetItem(QStringLiteral("-")));
+    m_remoteTable->setItem(0, 3, new QTableWidgetItem(QString()));
 
     for (int row = 0; row < entries.size(); ++row) {
         const RemoteEntry &entry = entries.at(row);
+        const int tableRow = row + 1;
         QTableWidgetItem *name = new QTableWidgetItem(entry.directory ? QIcon::fromTheme(QStringLiteral("folder")) : QIcon::fromTheme(QStringLiteral("text-x-generic")), entry.name);
         name->setData(Qt::UserRole, entry.path);
         name->setData(Qt::UserRole + 1, entry.directory);
+        name->setData(Qt::UserRole + 2, false);
 
-        m_remoteTable->setItem(row, 0, name);
-        m_remoteTable->setItem(row, 1, new QTableWidgetItem(entry.directory ? tr("Folder") : tr("File")));
-        m_remoteTable->setItem(row, 2, new QTableWidgetItem(entry.size >= 0 ? QString::number(entry.size) : QStringLiteral("-")));
-        m_remoteTable->setItem(row, 3, new QTableWidgetItem(entry.modified));
+        m_remoteTable->setItem(tableRow, 0, name);
+        m_remoteTable->setItem(tableRow, 1, new QTableWidgetItem(entry.directory ? tr("Folder") : tr("File")));
+        m_remoteTable->setItem(tableRow, 2, new QTableWidgetItem(entry.size >= 0 ? QString::number(entry.size) : QStringLiteral("-")));
+        m_remoteTable->setItem(tableRow, 3, new QTableWidgetItem(entry.modified));
     }
 
     m_remoteStatusLabel->setText(tr("%1 entries in %2").arg(entries.size()).arg(path));
@@ -461,18 +595,39 @@ void MainWindow::showTransferFinished(const QString &source, const QString &dest
 {
     Q_UNUSED(source)
     Q_UNUSED(destination)
-    setBusy(false);
+    setTransferBusy(false);
     updateFirstRunningTransfer(tr("Done"));
     if (m_lastTransferWasUpload) {
         refreshRemote();
     } else {
         m_localModel->setRootPath(m_localPathEdit->text());
+        QDesktopServices::openUrl(QUrl::fromLocalFile(destination));
     }
+}
+
+void MainWindow::showTransferProgress(int percent)
+{
+    if (m_activeTransferRow < 0) {
+        return;
+    }
+    QProgressBar *bar = qobject_cast<QProgressBar *>(m_transferTable->cellWidget(m_activeTransferRow, 3));
+    if (bar) {
+        bar->setRange(0, 100);
+        bar->setValue(percent);
+        bar->setFormat(QStringLiteral("%p%"));
+    }
+}
+
+void MainWindow::showTransferCancelled()
+{
+    setTransferBusy(false);
+    updateFirstRunningTransfer(tr("Cancelled"));
 }
 
 void MainWindow::showError(const QString &message, const QString &details)
 {
-    setBusy(false);
+    setBrowsingBusy(false);
+    setTransferBusy(false);
     updateFirstRunningTransfer(tr("Failed"));
     const QString fullMessage = details.isEmpty() ? message : QStringLiteral("%1\n%2").arg(message, details);
     m_remoteStatusLabel->setText(message);
@@ -535,12 +690,16 @@ QString MainWindow::joinRemotePath(const QString &basePath, const QString &name)
     return base + name;
 }
 
-void MainWindow::setBusy(bool busy)
+void MainWindow::setBrowsingBusy(bool busy)
 {
     m_connectButton->setEnabled(!busy);
     m_saveSiteButton->setEnabled(!busy);
     m_remoteRefreshButton->setEnabled(!busy);
     m_remoteUpButton->setEnabled(!busy);
+}
+
+void MainWindow::setTransferBusy(bool busy)
+{
     m_uploadButton->setEnabled(!busy);
     m_downloadButton->setEnabled(!busy);
 }
@@ -551,14 +710,19 @@ void MainWindow::appendLog(const QString &message)
                            .arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss")), message));
 }
 
-void MainWindow::addTransferRow(const QString &direction, const QString &source, const QString &destination)
+int MainWindow::addTransferRow(const QString &direction, const QString &source, const QString &destination)
 {
     const int row = m_transferTable->rowCount();
     m_transferTable->insertRow(row);
     m_transferTable->setItem(row, 0, new QTableWidgetItem(direction));
     m_transferTable->setItem(row, 1, new QTableWidgetItem(source));
     m_transferTable->setItem(row, 2, new QTableWidgetItem(destination));
+    QProgressBar *progress = new QProgressBar(m_transferTable);
+    progress->setRange(0, 0);
+    progress->setFormat(tr("Starting"));
+    m_transferTable->setCellWidget(row, 3, progress);
     m_transferTable->setItem(row, 3, new QTableWidgetItem(tr("Running")));
+    return row;
 }
 
 void MainWindow::updateFirstRunningTransfer(const QString &status)
@@ -567,9 +731,61 @@ void MainWindow::updateFirstRunningTransfer(const QString &status)
         QTableWidgetItem *item = m_transferTable->item(row, 3);
         if (item && item->text() == tr("Running")) {
             item->setText(status);
+            QProgressBar *bar = qobject_cast<QProgressBar *>(m_transferTable->cellWidget(row, 3));
+            if (bar) {
+                bar->setRange(0, 100);
+                bar->setValue(status == tr("Done") ? 100 : bar->value());
+                bar->setFormat(status);
+            }
             return;
         }
     }
+}
+
+bool MainWindow::confirmDownloadConflict(const RemoteEntry &entry, const QString &localPath, bool *resume)
+{
+    *resume = false;
+    QFileInfo localInfo(localPath);
+    if (!localInfo.exists()) {
+        return true;
+    }
+
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Question);
+    box.setWindowTitle(tr("File exists"));
+    box.setText(tr("%1 already exists in the local folder.").arg(localInfo.fileName()));
+    QPushButton *resumeButton = box.addButton(tr("Resume"), QMessageBox::AcceptRole);
+    QPushButton *overwriteButton = box.addButton(tr("Overwrite"), QMessageBox::DestructiveRole);
+    QPushButton *newerButton = box.addButton(tr("Keep Newer"), QMessageBox::ActionRole);
+    QPushButton *largerButton = box.addButton(tr("Keep Larger"), QMessageBox::ActionRole);
+    box.addButton(QMessageBox::Cancel);
+    QCheckBox *applyCheck = new QCheckBox(tr("Apply to transfers in this session"), &box);
+    box.setCheckBox(applyCheck);
+    box.exec();
+
+    QAbstractButton *clicked = box.clickedButton();
+    Q_UNUSED(applyCheck)
+    if (clicked == resumeButton) {
+        *resume = true;
+        return true;
+    }
+    if (clicked == overwriteButton) {
+        QFile::remove(localPath);
+        return true;
+    }
+    if (clicked == newerButton) {
+        appendLog(tr("Skipped %1 because exact remote modification comparison is not available yet.").arg(entry.name));
+        return false;
+    }
+    if (clicked == largerButton) {
+        if (entry.size > localInfo.size()) {
+            QFile::remove(localPath);
+            return true;
+        }
+        appendLog(tr("Skipped %1 because the local file is larger or equal.").arg(entry.name));
+        return false;
+    }
+    return false;
 }
 
 void MainWindow::loadSavedSites()

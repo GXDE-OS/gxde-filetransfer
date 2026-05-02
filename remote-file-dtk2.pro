@@ -14,3 +14,9 @@ SOURCES += \
 HEADERS += \
     src/mainwindow.h \
     src/remoteclient.h
+
+RESOURCES += \
+    translations.qrc
+
+TRANSLATIONS += \
+    translations/remote-file-dtk2_zh_CN.ts

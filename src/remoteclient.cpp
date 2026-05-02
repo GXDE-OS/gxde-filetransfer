@@ -26,6 +26,7 @@ void RemoteClient::list(const RemoteConnection &connection, const QString &path)
 
     m_connection = connection;
     m_operation = ListOperation;
+    m_cancelled = false;
     m_currentPath = normalizePath(path.isEmpty() ? connection.path : path);
     if (m_currentPath != QLatin1String("/") && !m_currentPath.endsWith(QLatin1Char('/'))) {
         m_currentPath.append(QLatin1Char('/'));
@@ -49,7 +50,7 @@ void RemoteClient::list(const RemoteConnection &connection, const QString &path)
     m_process->start();
 }
 
-void RemoteClient::download(const RemoteConnection &connection, const QString &remotePath, const QString &localPath)
+void RemoteClient::download(const RemoteConnection &connection, const QString &remotePath, const QString &localPath, bool resume)
 {
     if (isBusy()) {
         emit failed(tr("A remote operation is already running."), QString());
@@ -58,6 +59,7 @@ void RemoteClient::download(const RemoteConnection &connection, const QString &r
 
     m_connection = connection;
     m_operation = DownloadOperation;
+    m_cancelled = false;
     m_currentPath = normalizePath(remotePath);
     m_currentUrl = buildUrl(connection, m_currentPath);
     m_transferSource = m_currentUrl;
@@ -66,14 +68,17 @@ void RemoteClient::download(const RemoteConnection &connection, const QString &r
     m_process = new QProcess(this);
     m_process->setProgram(QStringLiteral("curl"));
     QStringList args;
-    args << QStringLiteral("--silent")
-         << QStringLiteral("--show-error")
+    args << QStringLiteral("--show-error")
          << QStringLiteral("--globoff")
+         << QStringLiteral("--progress-bar")
          << QStringLiteral("--location")
          << QStringLiteral("--connect-timeout") << QStringLiteral("15")
          << QStringLiteral("--max-time") << QStringLiteral("0");
     if (!connection.username.isEmpty()) {
         args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
+    }
+    if (resume) {
+        args << QStringLiteral("--continue-at") << QStringLiteral("-");
     }
     args << QStringLiteral("--output") << localPath << m_currentUrl;
     m_process->setArguments(args);
@@ -81,6 +86,7 @@ void RemoteClient::download(const RemoteConnection &connection, const QString &r
 
     connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &RemoteClient::onFinished);
+    connect(m_process, &QProcess::readyReadStandardError, this, &RemoteClient::readTransferProgress);
     connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         Q_UNUSED(error)
         emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
@@ -100,6 +106,7 @@ void RemoteClient::upload(const RemoteConnection &connection, const QString &loc
 
     m_connection = connection;
     m_operation = UploadOperation;
+    m_cancelled = false;
     m_currentPath = normalizePath(remotePath);
     m_currentUrl = buildUrl(connection, m_currentPath);
     m_transferSource = localPath;
@@ -108,9 +115,9 @@ void RemoteClient::upload(const RemoteConnection &connection, const QString &loc
     m_process = new QProcess(this);
     m_process->setProgram(QStringLiteral("curl"));
     QStringList args;
-    args << QStringLiteral("--silent")
-         << QStringLiteral("--show-error")
+    args << QStringLiteral("--show-error")
          << QStringLiteral("--globoff")
+         << QStringLiteral("--progress-bar")
          << QStringLiteral("--location")
          << QStringLiteral("--connect-timeout") << QStringLiteral("15")
          << QStringLiteral("--max-time") << QStringLiteral("0");
@@ -123,6 +130,7 @@ void RemoteClient::upload(const RemoteConnection &connection, const QString &loc
 
     connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &RemoteClient::onFinished);
+    connect(m_process, &QProcess::readyReadStandardError, this, &RemoteClient::readTransferProgress);
     connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         Q_UNUSED(error)
         emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
@@ -139,6 +147,7 @@ void RemoteClient::cancel()
         return;
     }
 
+    m_cancelled = true;
     m_process->kill();
 }
 
@@ -151,6 +160,13 @@ void RemoteClient::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
     process->deleteLater();
     m_process = nullptr;
 
+    if (m_cancelled) {
+        m_cancelled = false;
+        emit cancelled();
+        emit logMessage(tr("Transfer cancelled."));
+        return;
+    }
+
     if (exitStatus != QProcess::NormalExit || exitCode != 0) {
         emit failed(m_operation == ListOperation ? tr("Remote listing failed.") : tr("Transfer failed."),
                     QString::fromLocal8Bit(errorOutput).trimmed());
@@ -158,6 +174,7 @@ void RemoteClient::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
     }
 
     if (m_operation != ListOperation) {
+        emit transferProgress(100);
         emit transferFinished(m_transferSource, m_transferDestination);
         emit logMessage(tr("Transfer complete: %1 -> %2").arg(m_transferSource, m_transferDestination));
         return;
@@ -166,6 +183,25 @@ void RemoteClient::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
     QVector<RemoteEntry> entries = parseDirectoryListing(m_connection.protocol, m_currentPath, output);
     emit listed(m_currentPath, entries);
     emit logMessage(tr("Loaded %1 entries from %2").arg(entries.size()).arg(m_currentUrl));
+}
+
+void RemoteClient::readTransferProgress()
+{
+    if (!m_process || m_operation == ListOperation) {
+        return;
+    }
+
+    const QString text = QString::fromLocal8Bit(m_process->readAllStandardError());
+    const QRegularExpression percentPattern(QStringLiteral("(\\d{1,3}(?:\\.\\d+)?)%"));
+    QRegularExpressionMatchIterator it = percentPattern.globalMatch(text);
+    int lastPercent = -1;
+    while (it.hasNext()) {
+        const QRegularExpressionMatch match = it.next();
+        lastPercent = qBound(0, qRound(match.captured(1).toDouble()), 100);
+    }
+    if (lastPercent >= 0) {
+        emit transferProgress(lastPercent);
+    }
 }
 
 QString RemoteClient::buildUrl(const RemoteConnection &connection, const QString &path) const

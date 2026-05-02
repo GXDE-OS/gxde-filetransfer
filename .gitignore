@@ -3,6 +3,7 @@
 /*.o
 /moc_*.cpp
 /moc_*.o
+/qrc_*.cpp
 /moc_predefs.h
 /remote-file-dtk2
 /dtk2core/

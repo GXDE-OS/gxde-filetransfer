@@ -4,6 +4,8 @@
 #include <DLog>
 
 #include <QCommandLineParser>
+#include <QLocale>
+#include <QTranslator>
 
 DWIDGET_USE_NAMESPACE
 
@@ -18,6 +20,11 @@ int main(int argc, char *argv[])
     app.setApplicationDisplayName("Remote File DTK2");
     app.setApplicationVersion("0.1.0");
     app.loadTranslator();
+
+    QTranslator translator;
+    if (translator.load(QStringLiteral(":/translations/remote-file-dtk2_%1.qm").arg(QLocale::system().name()))) {
+        app.installTranslator(&translator);
+    }
 
     Dtk::Core::DLogManager::registerConsoleAppender();
 

@@ -33,19 +33,22 @@ public:
 
     bool isBusy() const;
     void list(const RemoteConnection &connection, const QString &path);
-    void download(const RemoteConnection &connection, const QString &remotePath, const QString &localPath);
+    void download(const RemoteConnection &connection, const QString &remotePath, const QString &localPath, bool resume = false);
     void upload(const RemoteConnection &connection, const QString &localPath, const QString &remotePath);
     void cancel();
 
 signals:
     void started(const QString &url);
     void listed(const QString &path, const QVector<RemoteEntry> &entries);
+    void transferProgress(int percent);
     void transferFinished(const QString &source, const QString &destination);
+    void cancelled();
     void failed(const QString &message, const QString &details);
     void logMessage(const QString &message);
 
 private slots:
     void onFinished(int exitCode, QProcess::ExitStatus exitStatus);
+    void readTransferProgress();
 
 private:
     enum Operation {
@@ -70,4 +73,5 @@ private:
     QString m_currentUrl;
     QString m_transferSource;
     QString m_transferDestination;
+    bool m_cancelled = false;
 };

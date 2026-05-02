@@ -268,7 +268,7 @@ QWidget *MainWindow::createTransferPane()
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
-    if (watched == m_remoteTable->viewport()) {
+    if (m_remoteTable && watched == m_remoteTable->viewport()) {
         if (event->type() == QEvent::DragEnter) {
             QDragEnterEvent *dragEvent = static_cast<QDragEnterEvent *>(event);
             if (dragEvent->mimeData()->hasUrls()) {

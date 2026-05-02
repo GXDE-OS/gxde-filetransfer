@@ -35,6 +35,7 @@ public:
     void list(const RemoteConnection &connection, const QString &path);
     void download(const RemoteConnection &connection, const QString &remotePath, const QString &localPath, bool resume = false);
     void upload(const RemoteConnection &connection, const QString &localPath, const QString &remotePath);
+    void remove(const RemoteConnection &connection, const QString &remotePath, bool directory);
     void cancel();
 
 signals:
@@ -42,6 +43,7 @@ signals:
     void listed(const QString &path, const QVector<RemoteEntry> &entries);
     void transferProgress(int percent);
     void transferFinished(const QString &source, const QString &destination);
+    void removeFinished(const QString &path);
     void cancelled();
     void failed(const QString &message, const QString &details);
     void logMessage(const QString &message);
@@ -54,7 +56,8 @@ private:
     enum Operation {
         ListOperation,
         DownloadOperation,
-        UploadOperation
+        UploadOperation,
+        RemoveOperation
     };
 
     QString buildUrl(const RemoteConnection &connection, const QString &path) const;
@@ -73,5 +76,6 @@ private:
     QString m_currentUrl;
     QString m_transferSource;
     QString m_transferDestination;
+    QString m_removePath;
     bool m_cancelled = false;
 };

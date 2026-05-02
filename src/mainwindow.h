@@ -4,13 +4,11 @@
 
 #include <DMainWindow>
 
-#include <QFileSystemModel>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTableWidget>
-#include <QTreeView>
 #include <QVector>
 
 class QComboBox;
@@ -29,9 +27,11 @@ private slots:
     void goRemoteUp();
     void goLocalUp();
     void openRemoteEntry(int row, int column);
-    void openLocalEntry(const QModelIndex &index);
+    void openLocalEntry(int row, int column);
     void uploadSelected();
     void downloadSelected();
+    void deleteSelectedLocal();
+    void deleteSelectedRemote();
     void openLocalFile();
     void cancelSelectedTransfer();
     void showLocalContextMenu(const QPoint &pos);
@@ -43,6 +43,7 @@ private slots:
     void showTransferFinished(const QString &source, const QString &destination);
     void showTransferProgress(int percent);
     void showTransferCancelled();
+    void showRemoteRemoved(const QString &path);
     void showError(const QString &message, const QString &details);
     void updateDefaultPort();
     void setLocalPathFromEdit();
@@ -57,6 +58,13 @@ private:
     RemoteConnection currentConnection() const;
     QString parentPath(const QString &path) const;
     QString joinRemotePath(const QString &basePath, const QString &name) const;
+    void loadLocalDirectory(const QString &path);
+    QStringList selectedLocalPaths() const;
+    QVector<RemoteEntry> selectedRemoteEntries() const;
+    bool uploadPath(const QString &localPath, const QString &remoteBasePath);
+    void startNextUpload();
+    void startNextDownload();
+    void startNextRemoteDelete();
     void setBrowsingBusy(bool busy);
     void setTransferBusy(bool busy);
     void appendLog(const QString &message);
@@ -89,11 +97,14 @@ private:
     QTableWidget *m_remoteTable = nullptr;
     QTableWidget *m_transferTable = nullptr;
     QPlainTextEdit *m_log = nullptr;
-    QFileSystemModel *m_localModel = nullptr;
-    QTreeView *m_localView = nullptr;
+    QTableWidget *m_localView = nullptr;
     RemoteClient *m_client = nullptr;
     RemoteClient *m_transferClient = nullptr;
     QVector<RemoteConnection> m_savedSites;
+    QStringList m_pendingUploadLocalPaths;
+    QStringList m_pendingUploadRemotePaths;
+    QVector<RemoteEntry> m_pendingDownloads;
+    QVector<RemoteEntry> m_pendingRemoteDeletes;
     bool m_lastTransferWasUpload = false;
     int m_activeTransferRow = -1;
 };

@@ -42,6 +42,9 @@ void RemoteClient::list(const RemoteConnection &connection, const QString &path)
             this, &RemoteClient::onFinished);
     connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         Q_UNUSED(error)
+        if (m_cancelled) {
+            return;
+        }
         emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
     });
 
@@ -71,6 +74,7 @@ void RemoteClient::download(const RemoteConnection &connection, const QString &r
     args << QStringLiteral("--show-error")
          << QStringLiteral("--globoff")
          << QStringLiteral("--progress-bar")
+         << QStringLiteral("--ftp-create-dirs")
          << QStringLiteral("--location")
          << QStringLiteral("--connect-timeout") << QStringLiteral("15")
          << QStringLiteral("--max-time") << QStringLiteral("0");
@@ -89,6 +93,9 @@ void RemoteClient::download(const RemoteConnection &connection, const QString &r
     connect(m_process, &QProcess::readyReadStandardError, this, &RemoteClient::readTransferProgress);
     connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         Q_UNUSED(error)
+        if (m_cancelled) {
+            return;
+        }
         emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
     });
 
@@ -133,11 +140,61 @@ void RemoteClient::upload(const RemoteConnection &connection, const QString &loc
     connect(m_process, &QProcess::readyReadStandardError, this, &RemoteClient::readTransferProgress);
     connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         Q_UNUSED(error)
+        if (m_cancelled) {
+            return;
+        }
         emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
     });
 
     emit started(m_currentUrl);
     emit logMessage(tr("Uploading %1 to %2").arg(localPath, m_currentUrl));
+    m_process->start();
+}
+
+void RemoteClient::remove(const RemoteConnection &connection, const QString &remotePath, bool directory)
+{
+    if (isBusy()) {
+        emit failed(tr("A remote operation is already running."), QString());
+        return;
+    }
+
+    m_connection = connection;
+    m_operation = RemoveOperation;
+    m_cancelled = false;
+    m_removePath = normalizePath(remotePath);
+    m_currentUrl = buildUrl(connection, m_removePath);
+
+    m_process = new QProcess(this);
+    m_process->setProgram(QStringLiteral("curl"));
+    QStringList args;
+    args << QStringLiteral("--silent")
+         << QStringLiteral("--show-error")
+         << QStringLiteral("--globoff")
+         << QStringLiteral("--connect-timeout") << QStringLiteral("15")
+         << QStringLiteral("--max-time") << QStringLiteral("60");
+    if (!connection.username.isEmpty()) {
+        args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
+    }
+
+    const QString protocol = connection.protocol.toLower();
+    if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
+        args << QStringLiteral("--request") << QStringLiteral("DELETE") << m_currentUrl;
+    } else {
+        args << QStringLiteral("--quote") << QStringLiteral("%1 %2").arg(directory ? QStringLiteral("rmdir") : QStringLiteral("rm"), m_removePath)
+             << buildUrl(connection, QStringLiteral("/"));
+    }
+
+    m_process->setArguments(args);
+    m_process->setProcessChannelMode(QProcess::SeparateChannels);
+    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &RemoteClient::onFinished);
+    connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        Q_UNUSED(error)
+        emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
+    });
+
+    emit started(m_currentUrl);
+    emit logMessage(tr("Deleting %1").arg(m_currentUrl));
     m_process->start();
 }
 
@@ -170,6 +227,12 @@ void RemoteClient::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
     if (exitStatus != QProcess::NormalExit || exitCode != 0) {
         emit failed(m_operation == ListOperation ? tr("Remote listing failed.") : tr("Transfer failed."),
                     QString::fromLocal8Bit(errorOutput).trimmed());
+        return;
+    }
+
+    if (m_operation == RemoveOperation) {
+        emit removeFinished(m_removePath);
+        emit logMessage(tr("Deleted %1").arg(m_removePath));
         return;
     }
 

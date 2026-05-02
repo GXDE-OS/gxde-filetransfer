@@ -17,8 +17,12 @@ make -j$(nproc)
 
 ## Current Scope
 
-- DTK2 main window and FileZilla-like quick connection bar.
+- DTK2 main window with a modern two-pane transfer layout.
+- Local file browser on the left and remote browser on the right.
+- Quick connection bar with saved site selection.
 - Remote directory listing for `ftp`, `sftp`, `webdav`, and `webdavs` via the system `curl` command.
 - Double-click folders to navigate, `Up` and `Refresh` controls, and a connection log panel.
+- Upload and download selected files with a transfer list.
+- Save connection credentials in the user's Qt settings for quick reuse.
 
-Transfers, bookmarks, host key management, and conflict handling are intentionally left for the next iteration.
+Recursive folder transfers, bookmarks, host key management, and conflict handling are intentionally left for the next iteration.

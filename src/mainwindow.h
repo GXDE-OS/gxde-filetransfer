@@ -4,11 +4,14 @@
 
 #include <DMainWindow>
 
+#include <QFileSystemModel>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTableWidget>
+#include <QTreeView>
+#include <QVector>
 
 class QComboBox;
 class QSpinBox;
@@ -22,32 +25,63 @@ public:
 
 private slots:
     void connectToRemote();
-    void refresh();
-    void goUp();
-    void openEntry(int row, int column);
+    void refreshRemote();
+    void goRemoteUp();
+    void goLocalUp();
+    void openRemoteEntry(int row, int column);
+    void openLocalEntry(const QModelIndex &index);
+    void uploadSelected();
+    void downloadSelected();
+    void saveCurrentSite();
+    void loadSelectedSite(int index);
     void showEntries(const QString &path, const QVector<RemoteEntry> &entries);
+    void showTransferFinished(const QString &source, const QString &destination);
     void showError(const QString &message, const QString &details);
     void updateDefaultPort();
+    void setLocalPathFromEdit();
 
 private:
     QWidget *createConnectionBar();
     QWidget *createBrowser();
+    QWidget *createLocalPane();
+    QWidget *createRemotePane();
+    QWidget *createTransferPane();
     RemoteConnection currentConnection() const;
     QString parentPath(const QString &path) const;
+    QString joinRemotePath(const QString &basePath, const QString &name) const;
     void setBusy(bool busy);
     void appendLog(const QString &message);
+    void addTransferRow(const QString &direction, const QString &source, const QString &destination);
+    void updateFirstRunningTransfer(const QString &status);
+    void loadSavedSites();
+    void persistSavedSites();
+    QString siteDisplayName(const RemoteConnection &connection) const;
+    QString selectedLocalPath() const;
+    RemoteEntry selectedRemoteEntry() const;
 
+    QComboBox *m_siteCombo = nullptr;
     QComboBox *m_protocolCombo = nullptr;
     QLineEdit *m_hostEdit = nullptr;
     QSpinBox *m_portSpin = nullptr;
     QLineEdit *m_userEdit = nullptr;
     QLineEdit *m_passwordEdit = nullptr;
-    QLineEdit *m_pathEdit = nullptr;
+    QLineEdit *m_remotePathEdit = nullptr;
+    QLineEdit *m_localPathEdit = nullptr;
     QPushButton *m_connectButton = nullptr;
-    QPushButton *m_refreshButton = nullptr;
-    QPushButton *m_upButton = nullptr;
-    QLabel *m_statusLabel = nullptr;
-    QTableWidget *m_table = nullptr;
+    QPushButton *m_saveSiteButton = nullptr;
+    QPushButton *m_uploadButton = nullptr;
+    QPushButton *m_downloadButton = nullptr;
+    QPushButton *m_remoteRefreshButton = nullptr;
+    QPushButton *m_remoteUpButton = nullptr;
+    QPushButton *m_localUpButton = nullptr;
+    QLabel *m_remoteStatusLabel = nullptr;
+    QLabel *m_localStatusLabel = nullptr;
+    QTableWidget *m_remoteTable = nullptr;
+    QTableWidget *m_transferTable = nullptr;
     QPlainTextEdit *m_log = nullptr;
+    QFileSystemModel *m_localModel = nullptr;
+    QTreeView *m_localView = nullptr;
     RemoteClient *m_client = nullptr;
+    QVector<RemoteConnection> m_savedSites;
+    bool m_lastTransferWasUpload = false;
 };

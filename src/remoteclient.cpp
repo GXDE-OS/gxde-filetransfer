@@ -1,6 +1,7 @@
 #include "remoteclient.h"
 
 #include <QFileInfo>
+#include <QDir>
 #include <QRegularExpression>
 #include <QTextStream>
 #include <QUrl>
@@ -24,6 +25,7 @@ void RemoteClient::list(const RemoteConnection &connection, const QString &path)
     }
 
     m_connection = connection;
+    m_operation = ListOperation;
     m_currentPath = normalizePath(path.isEmpty() ? connection.path : path);
     m_currentUrl = buildUrl(connection, m_currentPath);
 
@@ -41,6 +43,88 @@ void RemoteClient::list(const RemoteConnection &connection, const QString &path)
 
     emit started(m_currentUrl);
     emit logMessage(tr("Listing %1").arg(m_currentUrl));
+    m_process->start();
+}
+
+void RemoteClient::download(const RemoteConnection &connection, const QString &remotePath, const QString &localPath)
+{
+    if (isBusy()) {
+        emit failed(tr("A remote operation is already running."), QString());
+        return;
+    }
+
+    m_connection = connection;
+    m_operation = DownloadOperation;
+    m_currentPath = normalizePath(remotePath);
+    m_currentUrl = buildUrl(connection, m_currentPath);
+    m_transferSource = m_currentUrl;
+    m_transferDestination = localPath;
+
+    m_process = new QProcess(this);
+    m_process->setProgram(QStringLiteral("curl"));
+    QStringList args;
+    args << QStringLiteral("--silent")
+         << QStringLiteral("--show-error")
+         << QStringLiteral("--location")
+         << QStringLiteral("--connect-timeout") << QStringLiteral("15")
+         << QStringLiteral("--max-time") << QStringLiteral("0");
+    if (!connection.username.isEmpty()) {
+        args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
+    }
+    args << QStringLiteral("--output") << localPath << m_currentUrl;
+    m_process->setArguments(args);
+    m_process->setProcessChannelMode(QProcess::SeparateChannels);
+
+    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &RemoteClient::onFinished);
+    connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        Q_UNUSED(error)
+        emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
+    });
+
+    emit started(m_currentUrl);
+    emit logMessage(tr("Downloading %1 to %2").arg(m_currentUrl, localPath));
+    m_process->start();
+}
+
+void RemoteClient::upload(const RemoteConnection &connection, const QString &localPath, const QString &remotePath)
+{
+    if (isBusy()) {
+        emit failed(tr("A remote operation is already running."), QString());
+        return;
+    }
+
+    m_connection = connection;
+    m_operation = UploadOperation;
+    m_currentPath = normalizePath(remotePath);
+    m_currentUrl = buildUrl(connection, m_currentPath);
+    m_transferSource = localPath;
+    m_transferDestination = m_currentUrl;
+
+    m_process = new QProcess(this);
+    m_process->setProgram(QStringLiteral("curl"));
+    QStringList args;
+    args << QStringLiteral("--silent")
+         << QStringLiteral("--show-error")
+         << QStringLiteral("--location")
+         << QStringLiteral("--connect-timeout") << QStringLiteral("15")
+         << QStringLiteral("--max-time") << QStringLiteral("0");
+    if (!connection.username.isEmpty()) {
+        args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
+    }
+    args << QStringLiteral("--upload-file") << localPath << m_currentUrl;
+    m_process->setArguments(args);
+    m_process->setProcessChannelMode(QProcess::SeparateChannels);
+
+    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &RemoteClient::onFinished);
+    connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        Q_UNUSED(error)
+        emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
+    });
+
+    emit started(m_currentUrl);
+    emit logMessage(tr("Uploading %1 to %2").arg(localPath, m_currentUrl));
     m_process->start();
 }
 
@@ -63,7 +147,14 @@ void RemoteClient::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
     m_process = nullptr;
 
     if (exitStatus != QProcess::NormalExit || exitCode != 0) {
-        emit failed(tr("Remote listing failed."), QString::fromLocal8Bit(errorOutput).trimmed());
+        emit failed(m_operation == ListOperation ? tr("Remote listing failed.") : tr("Transfer failed."),
+                    QString::fromLocal8Bit(errorOutput).trimmed());
+        return;
+    }
+
+    if (m_operation != ListOperation) {
+        emit transferFinished(m_transferSource, m_transferDestination);
+        emit logMessage(tr("Transfer complete: %1 -> %2").arg(m_transferSource, m_transferDestination));
         return;
     }
 

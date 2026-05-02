@@ -33,11 +33,14 @@ public:
 
     bool isBusy() const;
     void list(const RemoteConnection &connection, const QString &path);
+    void download(const RemoteConnection &connection, const QString &remotePath, const QString &localPath);
+    void upload(const RemoteConnection &connection, const QString &localPath, const QString &remotePath);
     void cancel();
 
 signals:
     void started(const QString &url);
     void listed(const QString &path, const QVector<RemoteEntry> &entries);
+    void transferFinished(const QString &source, const QString &destination);
     void failed(const QString &message, const QString &details);
     void logMessage(const QString &message);
 
@@ -45,6 +48,12 @@ private slots:
     void onFinished(int exitCode, QProcess::ExitStatus exitStatus);
 
 private:
+    enum Operation {
+        ListOperation,
+        DownloadOperation,
+        UploadOperation
+    };
+
     QString buildUrl(const RemoteConnection &connection, const QString &path) const;
     QString normalizePath(const QString &path) const;
     QString joinPath(const QString &basePath, const QString &name) const;
@@ -55,7 +64,10 @@ private:
     QString displayNameFromHref(const QString &href) const;
 
     QProcess *m_process = nullptr;
+    Operation m_operation = ListOperation;
     RemoteConnection m_connection;
     QString m_currentPath;
     QString m_currentUrl;
+    QString m_transferSource;
+    QString m_transferDestination;
 };

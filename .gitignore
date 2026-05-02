@@ -5,3 +5,5 @@
 /moc_*.o
 /moc_predefs.h
 /remote-file-dtk2
+/dtk2core/
+/dtk2widget/

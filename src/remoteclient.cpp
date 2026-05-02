@@ -27,6 +27,9 @@ void RemoteClient::list(const RemoteConnection &connection, const QString &path)
     m_connection = connection;
     m_operation = ListOperation;
     m_currentPath = normalizePath(path.isEmpty() ? connection.path : path);
+    if (m_currentPath != QLatin1String("/") && !m_currentPath.endsWith(QLatin1Char('/'))) {
+        m_currentPath.append(QLatin1Char('/'));
+    }
     m_currentUrl = buildUrl(connection, m_currentPath);
 
     m_process = new QProcess(this);
@@ -65,6 +68,7 @@ void RemoteClient::download(const RemoteConnection &connection, const QString &r
     QStringList args;
     args << QStringLiteral("--silent")
          << QStringLiteral("--show-error")
+         << QStringLiteral("--globoff")
          << QStringLiteral("--location")
          << QStringLiteral("--connect-timeout") << QStringLiteral("15")
          << QStringLiteral("--max-time") << QStringLiteral("0");
@@ -106,6 +110,7 @@ void RemoteClient::upload(const RemoteConnection &connection, const QString &loc
     QStringList args;
     args << QStringLiteral("--silent")
          << QStringLiteral("--show-error")
+         << QStringLiteral("--globoff")
          << QStringLiteral("--location")
          << QStringLiteral("--connect-timeout") << QStringLiteral("15")
          << QStringLiteral("--max-time") << QStringLiteral("0");
@@ -208,6 +213,7 @@ QStringList RemoteClient::curlArguments(const RemoteConnection &connection, cons
     QStringList args;
     args << QStringLiteral("--silent")
          << QStringLiteral("--show-error")
+         << QStringLiteral("--globoff")
          << QStringLiteral("--location")
          << QStringLiteral("--connect-timeout") << QStringLiteral("15")
          << QStringLiteral("--max-time") << QStringLiteral("60");
@@ -271,6 +277,9 @@ QVector<RemoteEntry> RemoteClient::parseUnixListing(const QString &path, const Q
         }
 
         entry.path = joinPath(path, entry.name);
+        if (entry.directory && !entry.path.endsWith(QLatin1Char('/'))) {
+            entry.path.append(QLatin1Char('/'));
+        }
         entries.append(entry);
     }
 
@@ -328,6 +337,9 @@ QVector<RemoteEntry> RemoteClient::parseWebDavListing(const QString &path, const
                 if (!current.name.isEmpty() && normalizedCurrent != normalizedPath) {
                     if (current.path.isEmpty()) {
                         current.path = joinPath(path, current.name);
+                    }
+                    if (current.directory && !current.path.endsWith(QLatin1Char('/'))) {
+                        current.path.append(QLatin1Char('/'));
                     }
                     entries.append(current);
                 }

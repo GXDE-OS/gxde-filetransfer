@@ -8,9 +8,13 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
+#include <QGroupBox>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
+#include <QMenu>
 #include <QMessageBox>
+#include <QPoint>
 #include <QSettings>
 #include <QSpinBox>
 #include <QSplitter>
@@ -27,6 +31,9 @@ MainWindow::MainWindow(QWidget *parent)
     titlebar()->setSeparatorVisible(true);
 
     QWidget *central = new QWidget(this);
+    central->setStyleSheet(QStringLiteral(
+        "QGroupBox { border: 1px solid palette(mid); border-radius: 8px; margin-top: 12px; padding: 8px; }"
+        "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; }"));
     QVBoxLayout *layout = new QVBoxLayout(central);
     layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(10);
@@ -49,9 +56,9 @@ MainWindow::MainWindow(QWidget *parent)
 
 QWidget *MainWindow::createConnectionBar()
 {
-    QWidget *bar = new QWidget(this);
+    QGroupBox *bar = new QGroupBox(tr("Connection"), this);
     QHBoxLayout *layout = new QHBoxLayout(bar);
-    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setContentsMargins(8, 8, 8, 8);
 
     m_siteCombo = new QComboBox(bar);
     m_siteCombo->setMinimumWidth(160);
@@ -104,11 +111,15 @@ QWidget *MainWindow::createBrowser()
     QSplitter *bottom = new QSplitter(Qt::Horizontal, vertical);
     bottom->addWidget(createTransferPane());
 
-    m_log = new QPlainTextEdit(bottom);
+    QGroupBox *logGroup = new QGroupBox(tr("Log"), bottom);
+    QVBoxLayout *logLayout = new QVBoxLayout(logGroup);
+    logLayout->setContentsMargins(8, 8, 8, 8);
+    m_log = new QPlainTextEdit(logGroup);
     m_log->setReadOnly(true);
     m_log->setMaximumBlockCount(500);
     m_log->setPlaceholderText(tr("Connection log"));
-    bottom->addWidget(m_log);
+    logLayout->addWidget(m_log);
+    bottom->addWidget(logGroup);
     bottom->setStretchFactor(0, 2);
     bottom->setStretchFactor(1, 1);
 
@@ -121,9 +132,9 @@ QWidget *MainWindow::createBrowser()
 
 QWidget *MainWindow::createLocalPane()
 {
-    QWidget *pane = new QWidget(this);
+    QGroupBox *pane = new QGroupBox(tr("Local Files"), this);
     QVBoxLayout *layout = new QVBoxLayout(pane);
-    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setContentsMargins(8, 8, 8, 8);
 
     QHBoxLayout *tools = new QHBoxLayout;
     m_localStatusLabel = new QLabel(tr("Local"), pane);
@@ -143,6 +154,7 @@ QWidget *MainWindow::createLocalPane()
     m_localView->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_localView->setSelectionMode(QAbstractItemView::SingleSelection);
     m_localView->setAlternatingRowColors(true);
+    m_localView->setContextMenuPolicy(Qt::CustomContextMenu);
     m_localView->header()->setStretchLastSection(true);
 
     layout->addLayout(tools);
@@ -152,14 +164,15 @@ QWidget *MainWindow::createLocalPane()
     connect(m_localPathEdit, &QLineEdit::returnPressed, this, &MainWindow::setLocalPathFromEdit);
     connect(m_localUpButton, &QPushButton::clicked, this, &MainWindow::goLocalUp);
     connect(m_uploadButton, &QPushButton::clicked, this, &MainWindow::uploadSelected);
+    connect(m_localView, &QTreeView::customContextMenuRequested, this, &MainWindow::showLocalContextMenu);
     return pane;
 }
 
 QWidget *MainWindow::createRemotePane()
 {
-    QWidget *pane = new QWidget(this);
+    QGroupBox *pane = new QGroupBox(tr("Remote Files"), this);
     QVBoxLayout *layout = new QVBoxLayout(pane);
-    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setContentsMargins(8, 8, 8, 8);
 
     QHBoxLayout *tools = new QHBoxLayout;
     m_remoteStatusLabel = new QLabel(tr("Remote"), pane);
@@ -179,6 +192,7 @@ QWidget *MainWindow::createRemotePane()
     m_remoteTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_remoteTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_remoteTable->setAlternatingRowColors(true);
+    m_remoteTable->setContextMenuPolicy(Qt::CustomContextMenu);
 
     layout->addLayout(tools);
     layout->addWidget(m_remoteTable, 1);
@@ -187,19 +201,25 @@ QWidget *MainWindow::createRemotePane()
     connect(m_remoteRefreshButton, &QPushButton::clicked, this, &MainWindow::refreshRemote);
     connect(m_remoteUpButton, &QPushButton::clicked, this, &MainWindow::goRemoteUp);
     connect(m_downloadButton, &QPushButton::clicked, this, &MainWindow::downloadSelected);
+    connect(m_remoteTable, &QTableWidget::customContextMenuRequested, this, &MainWindow::showRemoteContextMenu);
     return pane;
 }
 
 QWidget *MainWindow::createTransferPane()
 {
-    m_transferTable = new QTableWidget(0, 4, this);
+    QGroupBox *pane = new QGroupBox(tr("Transfers"), this);
+    QVBoxLayout *layout = new QVBoxLayout(pane);
+    layout->setContentsMargins(8, 8, 8, 8);
+
+    m_transferTable = new QTableWidget(0, 4, pane);
     m_transferTable->setHorizontalHeaderLabels({tr("Direction"), tr("Source"), tr("Destination"), tr("Status")});
     m_transferTable->horizontalHeader()->setStretchLastSection(true);
     m_transferTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
     m_transferTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     m_transferTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_transferTable->setAlternatingRowColors(true);
-    return m_transferTable;
+    layout->addWidget(m_transferTable);
+    return pane;
 }
 
 RemoteConnection MainWindow::currentConnection() const
@@ -306,6 +326,71 @@ void MainWindow::downloadSelected()
     addTransferRow(tr("Download"), entry.path, localPath);
     m_lastTransferWasUpload = false;
     m_client->download(currentConnection(), entry.path, localPath);
+}
+
+void MainWindow::showLocalContextMenu(const QPoint &pos)
+{
+    const QModelIndex index = m_localView->indexAt(pos);
+    if (index.isValid()) {
+        m_localView->setCurrentIndex(index);
+    }
+
+    QMenu menu(this);
+    QAction *openAction = menu.addAction(tr("Open Folder"));
+    QAction *uploadAction = menu.addAction(tr("Upload File"));
+    menu.addSeparator();
+    QAction *refreshAction = menu.addAction(tr("Refresh"));
+
+    const QString path = selectedLocalPath();
+    const bool hasSelection = !path.isEmpty();
+    const bool isDirectory = hasSelection && QFileInfo(path).isDir();
+    openAction->setEnabled(isDirectory);
+    uploadAction->setEnabled(hasSelection && !isDirectory && !m_client->isBusy());
+
+    QAction *chosen = menu.exec(m_localView->viewport()->mapToGlobal(pos));
+    if (chosen == openAction && isDirectory) {
+        m_localPathEdit->setText(path);
+        m_localView->setRootIndex(m_localModel->index(path));
+    } else if (chosen == uploadAction) {
+        uploadSelected();
+    } else if (chosen == refreshAction) {
+        m_localModel->setRootPath(m_localPathEdit->text());
+    }
+}
+
+void MainWindow::showRemoteContextMenu(const QPoint &pos)
+{
+    const int row = m_remoteTable->rowAt(pos.y());
+    if (row >= 0) {
+        m_remoteTable->selectRow(row);
+    }
+
+    const RemoteEntry entry = selectedRemoteEntry();
+    const bool hasSelection = !entry.name.isEmpty();
+
+    QMenu menu(this);
+    QAction *openAction = menu.addAction(tr("Open Folder"));
+    QAction *downloadAction = menu.addAction(tr("Download File"));
+    menu.addSeparator();
+    QAction *refreshAction = menu.addAction(tr("Refresh"));
+    QAction *upAction = menu.addAction(tr("Go Up"));
+
+    openAction->setEnabled(hasSelection && entry.directory && !m_client->isBusy());
+    downloadAction->setEnabled(hasSelection && !entry.directory && !m_client->isBusy());
+    refreshAction->setEnabled(!m_client->isBusy());
+    upAction->setEnabled(!m_client->isBusy());
+
+    QAction *chosen = menu.exec(m_remoteTable->viewport()->mapToGlobal(pos));
+    if (chosen == openAction) {
+        m_remotePathEdit->setText(entry.path);
+        refreshRemote();
+    } else if (chosen == downloadAction) {
+        downloadSelected();
+    } else if (chosen == refreshAction) {
+        refreshRemote();
+    } else if (chosen == upAction) {
+        goRemoteUp();
+    }
 }
 
 void MainWindow::saveCurrentSite()

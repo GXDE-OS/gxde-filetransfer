@@ -32,6 +32,8 @@ private slots:
     void openLocalEntry(const QModelIndex &index);
     void uploadSelected();
     void downloadSelected();
+    void showLocalContextMenu(const QPoint &pos);
+    void showRemoteContextMenu(const QPoint &pos);
     void saveCurrentSite();
     void loadSelectedSite(int index);
     void showEntries(const QString &path, const QVector<RemoteEntry> &entries);

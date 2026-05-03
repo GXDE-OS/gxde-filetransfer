@@ -19,7 +19,6 @@ int main(int argc, char *argv[])
     DApplication app(argc, argv);
     app.setOrganizationName("gxde");
     app.setApplicationName("gxde-filetransfer");
-    app.setApplicationDisplayName("GXDE File Transfer");
     app.setApplicationVersion("0.1");
     const QIcon appIcon(QStringLiteral(":/icons/gxde-filetransfer.svg"));
     app.setWindowIcon(appIcon);
@@ -33,7 +32,10 @@ int main(int argc, char *argv[])
         app.installTranslator(&translator);
     }
 
+    const QString displayName = QCoreApplication::translate("Application", "GXDE File Transfer");
     const QString description = QCoreApplication::translate("Application", "A simple and easy-to-use FTP, SFTP, WebDAV and WebDAVS client.");
+    app.setApplicationDisplayName(displayName);
+    app.setProductName(displayName);
     app.setApplicationDescription(description);
 
     Dtk::Core::DLogManager::registerConsoleAppender();

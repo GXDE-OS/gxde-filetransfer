@@ -1,7 +1,9 @@
 [Desktop Entry]
 Type=Application
 Name=GXDE File Transfer
-Comment=Transfer files with FTP, SFTP and WebDAV
+Name[zh_CN]=GXDE 文件传输工具
+Comment=A simple and easy-to-use FTP, SFTP, WebDAV and WebDAVS client
+Comment[zh_CN]=简单好用的 FTP, SFTP, WebDAV 和 WebDAVS 客户端
 Exec=gxde-filetransfer
 Icon=gxde-filetransfer
 Terminal=false

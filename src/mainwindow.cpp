@@ -965,7 +965,6 @@ void MainWindow::showTransferContextMenu(const QPoint &pos)
 void MainWindow::showSavedSitesDialog()
 {
     DDialog dialog(this);
-    dialog.setIcon(QIcon::fromTheme(QStringLiteral("preferences-system")), QSize(48, 48));
     dialog.setTitle(tr("Settings"));
     dialog.setMessage(tr("Manage saved remote connections"));
     dialog.addButton(tr("Close"), true);
@@ -977,9 +976,20 @@ void MainWindow::showSavedSitesDialog()
     layout->setContentsMargins(16, 16, 16, 16);
     layout->setSpacing(12);
 
-    QListWidget *list = new QListWidget(central);
+    QGroupBox *listGroup = new QGroupBox(tr("Saved Connections"), central);
+    QVBoxLayout *listLayout = new QVBoxLayout(listGroup);
+    listLayout->setContentsMargins(8, 8, 8, 8);
+
+    QListWidget *list = new QListWidget(listGroup);
     list->setMinimumWidth(240);
-    layout->addWidget(list, 1);
+    list->setAlternatingRowColors(true);
+    list->setStyleSheet(QStringLiteral(
+        "QListWidget { border: 1px solid palette(mid); border-radius: 8px; background: palette(base); padding: 4px; }"
+        "QListWidget::item { min-height: 34px; border-radius: 6px; padding: 5px 8px; }"
+        "QListWidget::item:selected { background: palette(highlight); color: palette(highlighted-text); }"
+        "QListWidget::item:disabled { color: palette(mid); }"));
+    listLayout->addWidget(list);
+    layout->addWidget(listGroup, 1);
 
     QGroupBox *detailsGroup = new QGroupBox(tr("Saved Connection"), central);
     QVBoxLayout *detailsLayout = new QVBoxLayout(detailsGroup);
@@ -1068,6 +1078,12 @@ void MainWindow::showSavedSitesDialog()
             item->setData(Qt::UserRole, i);
             item->setToolTip(m_savedSites.at(i).path);
         }
+        if (list->count() == 0) {
+            QListWidgetItem *empty = new QListWidgetItem(QIcon::fromTheme(QStringLiteral("list-add")), tr("No saved connections yet"), list);
+            empty->setData(Qt::UserRole, -1);
+            empty->setFlags(Qt::NoItemFlags);
+            empty->setToolTip(tr("Click New to add a saved connection."));
+        }
         if (list->count() > 0) {
             list->setCurrentRow(0);
         }
@@ -1155,7 +1171,7 @@ void MainWindow::showSavedSitesDialog()
     });
 
     populateList();
-    if (list->count() > 0) {
+    if (!m_savedSites.isEmpty()) {
         updateDetails();
     } else {
         clearForm();

@@ -10,10 +10,13 @@
 #include <QDesktopServices>
 #include <QDateTime>
 #include <QDragEnterEvent>
+#include <QDragMoveEvent>
 #include <QDropEvent>
 #include <QDrag>
 #include <QDir>
 #include <QDirIterator>
+#include <QEventLoop>
+#include <QFile>
 #include <QFileInfo>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -35,6 +38,51 @@
 #include <QVBoxLayout>
 
 DWIDGET_USE_NAMESPACE
+
+namespace {
+const char kRemotePathsMime[] = "application/x-remote-file-dtk2-paths";
+const char kXdndDirectSaveMime[] = "XdndDirectSave0";
+
+void polishFileTable(QTableWidget *table)
+{
+    table->setShowGrid(false);
+    table->setWordWrap(false);
+    table->setIconSize(QSize(24, 24));
+    table->verticalHeader()->hide();
+    table->verticalHeader()->setDefaultSectionSize(36);
+    table->horizontalHeader()->setHighlightSections(false);
+    table->setStyleSheet(QStringLiteral(
+        "QTableWidget { border: 1px solid palette(mid); border-radius: 8px; background: palette(base); alternate-background-color: rgba(0, 0, 0, 5%); }"
+        "QTableWidget::item { border: 0; padding: 5px 8px; }"
+        "QTableWidget::item:selected { border-radius: 6px; background: palette(highlight); color: palette(highlighted-text); }"
+        "QHeaderView::section { border: 0; border-bottom: 1px solid palette(mid); padding: 6px 8px; background: palette(window); font-weight: 600; }"));
+}
+
+bool copyDirectoryRecursively(const QString &sourcePath, const QString &destinationPath)
+{
+    QDir sourceDir(sourcePath);
+    if (!sourceDir.exists() || !QDir().mkpath(destinationPath)) {
+        return false;
+    }
+
+    QDirIterator it(sourcePath, QDir::AllEntries | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString source = it.next();
+        const QString relative = sourceDir.relativeFilePath(source);
+        const QString destination = QDir(destinationPath).filePath(relative);
+        const QFileInfo info(source);
+        if (info.isDir()) {
+            if (!QDir().mkpath(destination)) {
+                return false;
+            }
+        } else if (!QFile::copy(source, destination)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : DMainWindow(parent)
@@ -62,6 +110,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
     connect(m_client, &RemoteClient::listed, this, &MainWindow::showEntries);
     connect(m_client, &RemoteClient::removeFinished, this, &MainWindow::showRemoteRemoved);
+    connect(m_client, &RemoteClient::moveFinished, this, &MainWindow::showRemoteMoved);
     connect(m_client, &RemoteClient::transferFinished, this, &MainWindow::showTransferFinished);
     connect(m_client, &RemoteClient::failed, this, &MainWindow::showError);
     connect(m_client, &RemoteClient::logMessage, this, &MainWindow::appendLog);
@@ -182,11 +231,14 @@ QWidget *MainWindow::createLocalPane()
     m_localView->setAlternatingRowColors(true);
     m_localView->setContextMenuPolicy(Qt::CustomContextMenu);
     m_localView->setDragEnabled(true);
+    m_localView->setAcceptDrops(true);
+    m_localView->viewport()->setAcceptDrops(true);
     m_localView->horizontalHeader()->setStretchLastSection(false);
     m_localView->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     m_localView->setColumnWidth(0, 260);
     m_localView->setColumnWidth(1, 90);
     m_localView->setColumnWidth(2, 120);
+    polishFileTable(m_localView);
     m_localView->viewport()->installEventFilter(this);
     m_localView->installEventFilter(this);
 
@@ -245,6 +297,7 @@ QWidget *MainWindow::createRemotePane()
     m_remoteTable->setContextMenuPolicy(Qt::CustomContextMenu);
     m_remoteTable->setAcceptDrops(true);
     m_remoteTable->viewport()->setAcceptDrops(true);
+    polishFileTable(m_remoteTable);
     m_remoteTable->viewport()->installEventFilter(this);
     m_remoteTable->installEventFilter(this);
 
@@ -329,37 +382,73 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
             if ((mouseEvent->buttons() & Qt::LeftButton)
                 && (mouseEvent->pos() - remoteDragStart).manhattanLength() >= QApplication::startDragDistance()) {
                 const QVector<RemoteEntry> entries = selectedRemoteEntries();
-                if (!entries.isEmpty() && !entries.first().directory) {
+                QStringList remotePaths;
+                for (const RemoteEntry &entry : entries) {
+                    remotePaths << entry.path;
+                }
+                if (!remotePaths.isEmpty()) {
                     QMimeData *mime = new QMimeData;
-                    mime->setText(entries.first().path);
-                    QList<QUrl> urls;
-                    for (const RemoteEntry &entry : entries) {
-                        if (!entry.directory) {
-                            urls << QUrl(remoteUrlForPath(entry.path));
-                        }
-                    }
-                    mime->setUrls(urls);
+                    mime->setData(kRemotePathsMime, remotePaths.join(QLatin1Char('\n')).toUtf8());
+                    mime->setData(kXdndDirectSaveMime, entries.first().name.toUtf8());
                     QDrag *drag = new QDrag(m_remoteTable);
                     drag->setMimeData(mime);
-                    drag->exec(Qt::CopyAction);
+                    drag->exec(Qt::CopyAction | Qt::MoveAction, Qt::CopyAction);
+                    const QUrl directSaveUrl = mime->property("DirectSaveUrl").toUrl();
+                    if (directSaveUrl.isLocalFile()) {
+                        queueDownloads(entries, directSaveUrl.toLocalFile());
+                    }
                     return true;
                 }
             }
         }
         if (event->type() == QEvent::DragEnter) {
             QDragEnterEvent *dragEvent = static_cast<QDragEnterEvent *>(event);
-            if (dragEvent->mimeData()->hasUrls()) {
-                dragEvent->acceptProposedAction();
+            if (dragEvent->mimeData()->hasUrls() || dragEvent->mimeData()->hasFormat(kRemotePathsMime)) {
+                dragEvent->setDropAction(dragEvent->source() == m_remoteTable ? Qt::MoveAction : Qt::CopyAction);
+                dragEvent->accept();
+                return true;
+            }
+        } else if (event->type() == QEvent::DragMove) {
+            QDragMoveEvent *dragEvent = static_cast<QDragMoveEvent *>(event);
+            if (dragEvent->mimeData()->hasUrls() || dragEvent->mimeData()->hasFormat(kRemotePathsMime)) {
+                const QModelIndex index = m_remoteTable->indexAt(dragEvent->pos());
+                if (index.isValid()) {
+                    QTableWidgetItem *item = m_remoteTable->item(index.row(), 0);
+                    if (item && item->data(Qt::UserRole + 1).toBool()) {
+                        m_remoteTable->setCurrentCell(index.row(), 0);
+                    }
+                }
+                dragEvent->setDropAction(dragEvent->source() == m_remoteTable ? Qt::MoveAction : Qt::CopyAction);
+                dragEvent->accept();
                 return true;
             }
         } else if (event->type() == QEvent::Drop) {
             QDropEvent *dropEvent = static_cast<QDropEvent *>(event);
+            if (dropEvent->mimeData()->hasFormat(kRemotePathsMime) && dropEvent->source() == m_remoteTable) {
+                const QString text = QString::fromUtf8(dropEvent->mimeData()->data(kRemotePathsMime));
+                const QStringList paths = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+                const QVector<RemoteEntry> entries = remoteEntriesForPaths(paths);
+                if (!entries.isEmpty()) {
+                    queueRemoteMoves(entries, remoteDropBasePath(dropEvent->pos()));
+                    dropEvent->setDropAction(Qt::MoveAction);
+                    dropEvent->accept();
+                    return true;
+                }
+            }
+
             const QList<QUrl> urls = dropEvent->mimeData()->urls();
             if (!urls.isEmpty()) {
-                const QString path = urls.first().toLocalFile();
-                if (!path.isEmpty()) {
-                    uploadPath(path, m_remotePathEdit->text());
-                    dropEvent->acceptProposedAction();
+                const QString remoteBasePath = remoteDropBasePath(dropEvent->pos());
+                bool uploaded = false;
+                for (const QUrl &url : urls) {
+                    const QString path = url.toLocalFile();
+                    if (!path.isEmpty()) {
+                        uploaded = uploadPath(path, remoteBasePath) || uploaded;
+                    }
+                }
+                if (uploaded) {
+                    dropEvent->setDropAction(Qt::CopyAction);
+                    dropEvent->accept();
                     return true;
                 }
             }
@@ -384,28 +473,57 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
                     mime->setUrls(urls);
                     QDrag *drag = new QDrag(m_localView);
                     drag->setMimeData(mime);
-                    drag->exec(Qt::CopyAction);
+                    drag->exec(Qt::CopyAction | Qt::MoveAction, Qt::MoveAction);
                     return true;
                 }
             }
         } else if (event->type() == QEvent::DragEnter) {
             QDragEnterEvent *dragEvent = static_cast<QDragEnterEvent *>(event);
-            if (dragEvent->mimeData()->hasText()) {
-                dragEvent->acceptProposedAction();
+            if (dragEvent->mimeData()->hasFormat(kRemotePathsMime) || dragEvent->mimeData()->hasUrls()) {
+                dragEvent->setDropAction(dragEvent->source() == m_localView ? Qt::MoveAction : Qt::CopyAction);
+                dragEvent->accept();
+                return true;
+            }
+        } else if (event->type() == QEvent::DragMove) {
+            QDragMoveEvent *dragEvent = static_cast<QDragMoveEvent *>(event);
+            if (dragEvent->mimeData()->hasFormat(kRemotePathsMime) || dragEvent->mimeData()->hasUrls()) {
+                const QModelIndex index = m_localView->indexAt(dragEvent->pos());
+                if (index.isValid()) {
+                    QTableWidgetItem *item = m_localView->item(index.row(), 0);
+                    if (item && item->data(Qt::UserRole + 1).toBool()) {
+                        m_localView->setCurrentCell(index.row(), 0);
+                    }
+                }
+                dragEvent->setDropAction(dragEvent->source() == m_localView ? Qt::MoveAction : Qt::CopyAction);
+                dragEvent->accept();
                 return true;
             }
         } else if (event->type() == QEvent::Drop) {
             QDropEvent *dropEvent = static_cast<QDropEvent *>(event);
-            const QString remotePath = dropEvent->mimeData()->text();
-            if (!remotePath.isEmpty()) {
-                for (int row = 0; row < m_remoteTable->rowCount(); ++row) {
-                    QTableWidgetItem *item = m_remoteTable->item(row, 0);
-                    if (item && item->data(Qt::UserRole).toString() == remotePath) {
-                        m_remoteTable->selectRow(row);
-                        downloadSelected();
-                        dropEvent->acceptProposedAction();
-                        return true;
+            if (dropEvent->mimeData()->hasFormat(kRemotePathsMime)) {
+                const QString text = QString::fromUtf8(dropEvent->mimeData()->data(kRemotePathsMime));
+                const QStringList paths = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+                const QVector<RemoteEntry> entries = remoteEntriesForPaths(paths);
+                if (!entries.isEmpty()) {
+                    queueDownloads(entries, localDropDirectory(dropEvent->pos()));
+                    dropEvent->setDropAction(Qt::CopyAction);
+                    dropEvent->accept();
+                    return true;
+                }
+            } else if (dropEvent->mimeData()->hasUrls()) {
+                QStringList paths;
+                for (const QUrl &url : dropEvent->mimeData()->urls()) {
+                    const QString path = url.toLocalFile();
+                    if (!path.isEmpty()) {
+                        paths << path;
                     }
+                }
+                if (!paths.isEmpty()) {
+                    const bool move = dropEvent->source() == m_localView;
+                    copyOrMoveLocalPaths(paths, localDropDirectory(dropEvent->pos()), move);
+                    dropEvent->setDropAction(move ? Qt::MoveAction : Qt::CopyAction);
+                    dropEvent->accept();
+                    return true;
                 }
             }
         }
@@ -529,14 +647,7 @@ void MainWindow::downloadSelected()
     }
     m_openDownloadedAfterTransfer = m_nextDownloadShouldOpen;
     m_nextDownloadShouldOpen = false;
-    for (const RemoteEntry &entry : entries) {
-        if (entry.directory) {
-            appendLog(tr("Folder download is not implemented yet: %1").arg(entry.name));
-            continue;
-        }
-        m_pendingDownloads << entry;
-    }
-    startNextDownload();
+    queueDownloads(entries, m_localPathEdit->text());
 }
 
 void MainWindow::deleteSelectedLocal()
@@ -603,7 +714,7 @@ void MainWindow::showLocalContextMenu(const QPoint &pos)
 
     QMenu menu(this);
     QAction *openAction = menu.addAction(isDirectory ? tr("Open Folder") : tr("Open File"));
-    QAction *uploadAction = menu.addAction(tr("Upload File"));
+    QAction *uploadAction = menu.addAction(tr("Upload"));
     QAction *deleteAction = menu.addAction(tr("Delete"));
     menu.addSeparator();
     QAction *refreshAction = menu.addAction(tr("Refresh"));
@@ -639,15 +750,15 @@ void MainWindow::showRemoteContextMenu(const QPoint &pos)
     const bool hasSelection = !entry.name.isEmpty();
 
     QMenu menu(this);
-    QAction *openAction = menu.addAction(tr("Open Folder"));
-    QAction *downloadAction = menu.addAction(tr("Download File"));
+    QAction *openAction = menu.addAction(entry.directory ? tr("Open Folder") : tr("Open File"));
+    QAction *downloadAction = menu.addAction(tr("Download"));
     QAction *deleteAction = menu.addAction(tr("Delete"));
     menu.addSeparator();
     QAction *refreshAction = menu.addAction(tr("Refresh"));
     QAction *upAction = menu.addAction(tr("Go Up"));
 
     openAction->setEnabled(hasSelection && entry.directory && !m_client->isBusy());
-    downloadAction->setEnabled(hasSelection && !entry.directory && !m_transferClient->isBusy());
+    downloadAction->setEnabled(hasSelection && !m_transferClient->isBusy());
     deleteAction->setEnabled(hasSelection && !entry.name.isEmpty() && entry.name != QLatin1String("..") && !m_client->isBusy());
     refreshAction->setEnabled(!m_client->isBusy());
     upAction->setEnabled(!m_client->isBusy());
@@ -811,6 +922,18 @@ void MainWindow::showRemoteRemoved(const QString &path)
     }
 }
 
+void MainWindow::showRemoteMoved(const QString &source, const QString &destination)
+{
+    Q_UNUSED(source)
+    Q_UNUSED(destination)
+    setBrowsingBusy(false);
+    if (!m_pendingRemoteMoves.isEmpty()) {
+        startNextRemoteMove();
+    } else {
+        refreshRemote();
+    }
+}
+
 void MainWindow::showError(const QString &message, const QString &details)
 {
     setBrowsingBusy(false);
@@ -968,6 +1091,189 @@ QVector<RemoteEntry> MainWindow::selectedRemoteEntries() const
     return entries;
 }
 
+QVector<RemoteEntry> MainWindow::remoteEntriesForPaths(const QStringList &paths) const
+{
+    QVector<RemoteEntry> entries;
+    for (int row = 0; row < m_remoteTable->rowCount(); ++row) {
+        QTableWidgetItem *item = m_remoteTable->item(row, 0);
+        if (!item || item->data(Qt::UserRole + 2).toBool()) {
+            continue;
+        }
+        const QString path = item->data(Qt::UserRole).toString();
+        if (!paths.contains(path)) {
+            continue;
+        }
+
+        RemoteEntry entry;
+        entry.name = item->text();
+        entry.path = path;
+        entry.directory = item->data(Qt::UserRole + 1).toBool();
+        QTableWidgetItem *sizeItem = m_remoteTable->item(row, 2);
+        entry.size = sizeItem ? sizeItem->text().toLongLong() : -1;
+        entries << entry;
+    }
+    return entries;
+}
+
+void MainWindow::queueDownloads(const QVector<RemoteEntry> &entries, const QString &localDirectory)
+{
+    QDir targetDir(localDirectory.isEmpty() ? m_localPathEdit->text() : localDirectory);
+    if (!targetDir.exists()) {
+        appendLog(tr("Download target folder does not exist: %1").arg(targetDir.absolutePath()));
+        return;
+    }
+
+    for (const RemoteEntry &entry : entries) {
+        if (entry.directory) {
+            collectRemoteDownloads(entry, targetDir.filePath(entry.name));
+            continue;
+        }
+        m_pendingDownloads << entry;
+        m_pendingDownloadLocalPaths << targetDir.filePath(entry.name);
+    }
+    startNextDownload();
+}
+
+bool MainWindow::collectRemoteDownloads(const RemoteEntry &entry, const QString &localDirectory)
+{
+    QDir localDir(localDirectory);
+    if (!localDir.exists() && !QDir().mkpath(localDir.absolutePath())) {
+        appendLog(tr("Unable to create download folder: %1").arg(localDir.absolutePath()));
+        return false;
+    }
+
+    RemoteClient lister;
+    QEventLoop loop;
+    QVector<RemoteEntry> children;
+    bool ok = false;
+    connect(&lister, &RemoteClient::listed, this, [&](const QString &path, const QVector<RemoteEntry> &entries) {
+        Q_UNUSED(path)
+        children = entries;
+        ok = true;
+        loop.quit();
+    });
+    connect(&lister, &RemoteClient::failed, this, [&](const QString &message, const QString &details) {
+        appendLog(details.isEmpty() ? message : QStringLiteral("%1 %2").arg(message, details));
+        loop.quit();
+    });
+    connect(&lister, &RemoteClient::logMessage, this, &MainWindow::appendLog);
+
+    lister.list(currentConnection(), entry.path);
+    loop.exec();
+    if (!ok) {
+        return false;
+    }
+
+    for (const RemoteEntry &child : children) {
+        if (child.directory) {
+            collectRemoteDownloads(child, localDir.filePath(child.name));
+        } else {
+            m_pendingDownloads << child;
+            m_pendingDownloadLocalPaths << localDir.filePath(child.name);
+        }
+    }
+    return true;
+}
+
+QString MainWindow::remoteDropBasePath(const QPoint &pos) const
+{
+    const QModelIndex index = m_remoteTable->indexAt(pos);
+    if (index.isValid()) {
+        QTableWidgetItem *item = m_remoteTable->item(index.row(), 0);
+        if (item && item->data(Qt::UserRole + 1).toBool()) {
+            return item->data(Qt::UserRole).toString();
+        }
+    }
+    return m_remotePathEdit->text();
+}
+
+QString MainWindow::localDropDirectory(const QPoint &pos) const
+{
+    const QModelIndex index = m_localView->indexAt(pos);
+    if (index.isValid()) {
+        QTableWidgetItem *item = m_localView->item(index.row(), 0);
+        if (item && item->data(Qt::UserRole + 1).toBool()) {
+            return item->data(Qt::UserRole).toString();
+        }
+    }
+    return m_localPathEdit->text();
+}
+
+void MainWindow::copyOrMoveLocalPaths(const QStringList &paths, const QString &localDirectory, bool move)
+{
+    QDir targetDir(localDirectory.isEmpty() ? m_localPathEdit->text() : localDirectory);
+    if (!targetDir.exists()) {
+        appendLog(tr("Local target folder does not exist: %1").arg(targetDir.absolutePath()));
+        return;
+    }
+
+    bool changed = false;
+    for (const QString &path : paths) {
+        QFileInfo info(path);
+        if (!info.exists()) {
+            continue;
+        }
+
+        const QString source = info.absoluteFilePath();
+        const QString destination = targetDir.filePath(info.fileName());
+        if (source == destination || QFileInfo(destination).exists()) {
+            appendLog(tr("Skipped local file because the target already exists: %1").arg(destination));
+            continue;
+        }
+        if (move && info.isDir() && targetDir.absolutePath().startsWith(source + QLatin1Char('/'))) {
+            appendLog(tr("Skipped moving a folder into itself: %1").arg(source));
+            continue;
+        }
+
+        bool ok = false;
+        if (move) {
+            ok = info.isDir() ? QDir().rename(source, destination) : QFile::rename(source, destination);
+        } else if (info.isDir()) {
+            ok = copyDirectoryRecursively(source, destination);
+        } else {
+            ok = QFile::copy(source, destination);
+        }
+
+        if (!ok) {
+            appendLog(tr("Failed to %1 %2 to %3").arg(move ? tr("move") : tr("copy"), source, destination));
+            continue;
+        }
+        changed = true;
+    }
+
+    if (changed) {
+        loadLocalDirectory(m_localPathEdit->text());
+    }
+}
+
+void MainWindow::queueRemoteMoves(const QVector<RemoteEntry> &entries, const QString &remoteDirectory)
+{
+    QString targetDirectory = remoteDirectory;
+    if (targetDirectory.isEmpty()) {
+        targetDirectory = m_remotePathEdit->text();
+    }
+    if (!targetDirectory.endsWith(QLatin1Char('/'))) {
+        targetDirectory.append(QLatin1Char('/'));
+    }
+
+    for (const RemoteEntry &entry : entries) {
+        if (entry.directory && (entry.path == targetDirectory || targetDirectory.startsWith(entry.path))) {
+            appendLog(tr("Skipped moving a remote folder into itself: %1").arg(entry.path));
+            continue;
+        }
+        QString destination = joinRemotePath(targetDirectory, entry.name);
+        if (entry.directory && !destination.endsWith(QLatin1Char('/'))) {
+            destination.append(QLatin1Char('/'));
+        }
+        if (destination == entry.path) {
+            continue;
+        }
+        m_pendingRemoteMoves << entry;
+        m_pendingRemoteMoveDestinations << destination;
+    }
+    startNextRemoteMove();
+}
+
 bool MainWindow::uploadPath(const QString &localPath, const QString &remoteBasePath)
 {
     QFileInfo info(localPath);
@@ -1008,12 +1314,12 @@ void MainWindow::startNextUpload()
 
 void MainWindow::startNextDownload()
 {
-    if (m_transferClient->isBusy() || m_pendingDownloads.isEmpty()) {
+    if (m_transferClient->isBusy() || m_pendingDownloads.isEmpty() || m_pendingDownloadLocalPaths.isEmpty()) {
         return;
     }
 
     const RemoteEntry entry = m_pendingDownloads.takeFirst();
-    const QString localPath = QDir(m_localPathEdit->text()).filePath(entry.name);
+    const QString localPath = m_pendingDownloadLocalPaths.takeFirst();
     bool resume = false;
     if (!confirmDownloadConflict(entry, localPath, &resume)) {
         if (m_pendingDownloads.isEmpty()) {
@@ -1035,6 +1341,17 @@ void MainWindow::startNextRemoteDelete()
 
     const RemoteEntry entry = m_pendingRemoteDeletes.takeFirst();
     m_client->remove(currentConnection(), entry.path, entry.directory);
+}
+
+void MainWindow::startNextRemoteMove()
+{
+    if (m_client->isBusy() || m_pendingRemoteMoves.isEmpty() || m_pendingRemoteMoveDestinations.isEmpty()) {
+        return;
+    }
+
+    const RemoteEntry entry = m_pendingRemoteMoves.takeFirst();
+    const QString destination = m_pendingRemoteMoveDestinations.takeFirst();
+    m_client->move(currentConnection(), entry.path, destination);
 }
 
 void MainWindow::setBrowsingBusy(bool busy)

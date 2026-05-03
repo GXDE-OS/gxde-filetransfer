@@ -198,6 +198,60 @@ void RemoteClient::remove(const RemoteConnection &connection, const QString &rem
     m_process->start();
 }
 
+void RemoteClient::move(const RemoteConnection &connection, const QString &remotePath, const QString &destinationPath)
+{
+    if (isBusy()) {
+        emit failed(tr("A remote operation is already running."), QString());
+        return;
+    }
+
+    m_connection = connection;
+    m_operation = MoveOperation;
+    m_cancelled = false;
+    m_moveSourcePath = normalizePath(remotePath);
+    m_moveDestinationPath = normalizePath(destinationPath);
+    m_currentUrl = buildUrl(connection, m_moveSourcePath);
+
+    m_process = new QProcess(this);
+    m_process->setProgram(QStringLiteral("curl"));
+    QStringList args;
+    args << QStringLiteral("--silent")
+         << QStringLiteral("--show-error")
+         << QStringLiteral("--globoff")
+         << QStringLiteral("--connect-timeout") << QStringLiteral("15")
+         << QStringLiteral("--max-time") << QStringLiteral("60");
+    if (!connection.username.isEmpty()) {
+        args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
+    }
+
+    const QString protocol = connection.protocol.toLower();
+    if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
+        args << QStringLiteral("--request") << QStringLiteral("MOVE")
+             << QStringLiteral("--header") << QStringLiteral("Destination: %1").arg(buildUrl(connection, m_moveDestinationPath))
+             << m_currentUrl;
+    } else if (protocol == QLatin1String("sftp")) {
+        args << QStringLiteral("--quote") << QStringLiteral("rename %1 %2").arg(m_moveSourcePath, m_moveDestinationPath)
+             << buildUrl(connection, QStringLiteral("/"));
+    } else {
+        args << QStringLiteral("--quote") << QStringLiteral("RNFR %1").arg(m_moveSourcePath)
+             << QStringLiteral("--quote") << QStringLiteral("RNTO %1").arg(m_moveDestinationPath)
+             << buildUrl(connection, QStringLiteral("/"));
+    }
+
+    m_process->setArguments(args);
+    m_process->setProcessChannelMode(QProcess::SeparateChannels);
+    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &RemoteClient::onFinished);
+    connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        Q_UNUSED(error)
+        emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
+    });
+
+    emit started(m_currentUrl);
+    emit logMessage(tr("Moving %1 to %2").arg(m_moveSourcePath, m_moveDestinationPath));
+    m_process->start();
+}
+
 void RemoteClient::cancel()
 {
     if (!isBusy()) {
@@ -225,7 +279,7 @@ void RemoteClient::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
     }
 
     if (exitStatus != QProcess::NormalExit || exitCode != 0) {
-        emit failed(m_operation == ListOperation ? tr("Remote listing failed.") : tr("Transfer failed."),
+        emit failed(m_operation == ListOperation ? tr("Remote listing failed.") : tr("Remote operation failed."),
                     QString::fromLocal8Bit(errorOutput).trimmed());
         return;
     }
@@ -233,6 +287,12 @@ void RemoteClient::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
     if (m_operation == RemoveOperation) {
         emit removeFinished(m_removePath);
         emit logMessage(tr("Deleted %1").arg(m_removePath));
+        return;
+    }
+
+    if (m_operation == MoveOperation) {
+        emit moveFinished(m_moveSourcePath, m_moveDestinationPath);
+        emit logMessage(tr("Moved %1 to %2").arg(m_moveSourcePath, m_moveDestinationPath));
         return;
     }
 

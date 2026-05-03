@@ -44,6 +44,7 @@ private slots:
     void showTransferProgress(int percent);
     void showTransferCancelled();
     void showRemoteRemoved(const QString &path);
+    void showRemoteMoved(const QString &source, const QString &destination);
     void showError(const QString &message, const QString &details);
     void updateDefaultPort();
     void setLocalPathFromEdit();
@@ -63,9 +64,17 @@ private:
     QVector<RemoteEntry> selectedRemoteEntries() const;
     bool uploadPath(const QString &localPath, const QString &remoteBasePath);
     QString remoteUrlForPath(const QString &path) const;
+    QVector<RemoteEntry> remoteEntriesForPaths(const QStringList &paths) const;
+    void queueDownloads(const QVector<RemoteEntry> &entries, const QString &localDirectory);
+    QString remoteDropBasePath(const QPoint &pos) const;
+    QString localDropDirectory(const QPoint &pos) const;
+    void copyOrMoveLocalPaths(const QStringList &paths, const QString &localDirectory, bool move);
+    bool collectRemoteDownloads(const RemoteEntry &entry, const QString &localDirectory);
+    void queueRemoteMoves(const QVector<RemoteEntry> &entries, const QString &remoteDirectory);
     void startNextUpload();
     void startNextDownload();
     void startNextRemoteDelete();
+    void startNextRemoteMove();
     void setBrowsingBusy(bool busy);
     void setTransferBusy(bool busy);
     void appendLog(const QString &message);
@@ -105,7 +114,10 @@ private:
     QStringList m_pendingUploadLocalPaths;
     QStringList m_pendingUploadRemotePaths;
     QVector<RemoteEntry> m_pendingDownloads;
+    QStringList m_pendingDownloadLocalPaths;
     QVector<RemoteEntry> m_pendingRemoteDeletes;
+    QVector<RemoteEntry> m_pendingRemoteMoves;
+    QStringList m_pendingRemoteMoveDestinations;
     bool m_lastTransferWasUpload = false;
     bool m_nextDownloadShouldOpen = false;
     bool m_openDownloadedAfterTransfer = false;

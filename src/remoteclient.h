@@ -36,6 +36,7 @@ public:
     void download(const RemoteConnection &connection, const QString &remotePath, const QString &localPath, bool resume = false);
     void upload(const RemoteConnection &connection, const QString &localPath, const QString &remotePath);
     void remove(const RemoteConnection &connection, const QString &remotePath, bool directory);
+    void move(const RemoteConnection &connection, const QString &remotePath, const QString &destinationPath);
     void cancel();
 
 signals:
@@ -44,6 +45,7 @@ signals:
     void transferProgress(int percent);
     void transferFinished(const QString &source, const QString &destination);
     void removeFinished(const QString &path);
+    void moveFinished(const QString &source, const QString &destination);
     void cancelled();
     void failed(const QString &message, const QString &details);
     void logMessage(const QString &message);
@@ -57,7 +59,8 @@ private:
         ListOperation,
         DownloadOperation,
         UploadOperation,
-        RemoveOperation
+        RemoveOperation,
+        MoveOperation
     };
 
     QString buildUrl(const RemoteConnection &connection, const QString &path) const;
@@ -77,5 +80,7 @@ private:
     QString m_transferSource;
     QString m_transferDestination;
     QString m_removePath;
+    QString m_moveSourcePath;
+    QString m_moveDestinationPath;
     bool m_cancelled = false;
 };

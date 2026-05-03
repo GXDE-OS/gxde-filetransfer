@@ -27,6 +27,7 @@
 #include <QPoint>
 #include <QProgressBar>
 #include <QSettings>
+#include <QSizePolicy>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTableWidgetItem>
@@ -55,8 +56,9 @@ MainWindow::MainWindow(QWidget *parent)
     setCentralWidget(central);
 
     connect(m_client, &RemoteClient::started, this, [this](const QString &url) {
+        Q_UNUSED(url)
         setBrowsingBusy(true);
-        m_remoteStatusLabel->setText(tr("Working on %1").arg(url));
+        m_remoteStatusLabel->setText(tr("Loading"));
     });
     connect(m_client, &RemoteClient::listed, this, &MainWindow::showEntries);
     connect(m_client, &RemoteClient::removeFinished, this, &MainWindow::showRemoteRemoved);
@@ -209,6 +211,7 @@ QWidget *MainWindow::createRemotePane()
 
     QHBoxLayout *tools = new QHBoxLayout;
     m_remoteStatusLabel = new QLabel(tr("Remote"), pane);
+    m_remoteStatusLabel->setFixedWidth(72);
     m_remoteUpButton = new QPushButton(tr("Up"), pane);
     m_remoteRefreshButton = new QPushButton(tr("Refresh"), pane);
     m_downloadButton = new DPushButton(tr("< Download"), pane);
@@ -217,6 +220,8 @@ QWidget *MainWindow::createRemotePane()
     m_downloadButton->setIcon(QIcon::fromTheme(QStringLiteral("go-previous")));
     m_remotePathEdit = new QLineEdit(pane);
     m_remotePathEdit->setPlaceholderText(tr("Remote path"));
+    m_remotePathEdit->setMinimumWidth(160);
+    m_remotePathEdit->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
 
     tools->addWidget(m_remoteStatusLabel);
     tools->addWidget(m_remotePathEdit, 1);
@@ -750,7 +755,8 @@ void MainWindow::showEntries(const QString &path, const QVector<RemoteEntry> &en
         m_remoteTable->setItem(tableRow, 3, new QTableWidgetItem(entry.modified));
     }
 
-    m_remoteStatusLabel->setText(tr("%1 entries in %2").arg(entries.size()).arg(path));
+    Q_UNUSED(path)
+    m_remoteStatusLabel->setText(tr("%1 items").arg(entries.size()));
 }
 
 void MainWindow::showTransferFinished(const QString &source, const QString &destination)

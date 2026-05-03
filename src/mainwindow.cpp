@@ -259,7 +259,7 @@ QWidget *MainWindow::createLocalPane()
     QHBoxLayout *tools = new QHBoxLayout;
     m_localStatusLabel = new QLabel(tr("Local"), pane);
     m_localPathEdit = new QLineEdit(QDir::homePath(), pane);
-    m_localUpButton = new QPushButton(tr("Up"), pane);
+    m_localUpButton = new DPushButton(tr("Up"), pane);
     m_uploadButton = new DPushButton(tr("Upload >"), pane);
     m_localUpButton->setIcon(QIcon::fromTheme(QStringLiteral("go-up")));
     m_uploadButton->setIcon(QIcon::fromTheme(QStringLiteral("go-next")));
@@ -309,8 +309,8 @@ QWidget *MainWindow::createRemotePane()
     QHBoxLayout *tools = new QHBoxLayout;
     m_remoteStatusLabel = new QLabel(tr("Remote"), pane);
     m_remoteStatusLabel->setFixedWidth(54);
-    m_remoteUpButton = new QPushButton(tr("Up"), pane);
-    m_remoteRefreshButton = new QPushButton(tr("Refresh"), pane);
+    m_remoteUpButton = new DPushButton(tr("Up"), pane);
+    m_remoteRefreshButton = new DPushButton(tr("Refresh"), pane);
     m_downloadButton = new DPushButton(tr("< Download"), pane);
     m_remoteUpButton->setIcon(QIcon::fromTheme(QStringLiteral("go-up")));
     m_remoteRefreshButton->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));

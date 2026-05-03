@@ -133,7 +133,6 @@ MainWindow::MainWindow(QWidget *parent)
     central->setStyleSheet(QStringLiteral(
         "QGroupBox { border: 1px solid palette(mid); border-radius: 8px; margin-top: 12px; padding: 8px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; }"
-        "QPushButton { padding: 4px 10px; border-radius: 5px; }"
         "QLineEdit, QComboBox, QSpinBox { min-height: 26px; }"));
     QVBoxLayout *layout = new QVBoxLayout(central);
     layout->setContentsMargins(12, 12, 12, 12);
@@ -642,8 +641,12 @@ void MainWindow::connectToRemote()
 
     QString path = m_remotePathEdit->text();
     const QString protocol = m_protocolCombo->currentText();
-    if (path.isEmpty() && (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs"))) {
-        path = QStringLiteral("/");
+    if (path.isEmpty()) {
+        if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
+            path = QStringLiteral("/");
+        } else if (protocol == QLatin1String("ftp") || protocol == QLatin1String("sftp")) {
+            path = QStringLiteral("~");
+        }
     }
     m_client->list(currentConnection(), path);
 }
@@ -876,7 +879,6 @@ void MainWindow::showRemoteContextMenu(const QPoint &pos)
         downloadAction->setIcon(QIcon::fromTheme(QStringLiteral("go-previous")));
         if (entry.directory) {
             calculateSizeAction = menu.addAction(tr("Calculate Size"));
-            calculateSizeAction->setIcon(QIcon::fromTheme(QStringLiteral("accessories-calculator")));
         }
         deleteAction = menu.addAction(tr("Delete"));
         deleteAction->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
@@ -1013,7 +1015,6 @@ void MainWindow::showEntries(const QString &path, const QVector<RemoteEntry> &en
             sizeItem->setFont(linkFont);
             sizeItem->setForeground(QColor(0, 102, 204));
             sizeItem->setToolTip(tr("Click to calculate the actual remote folder size"));
-            sizeItem->setIcon(QIcon::fromTheme(QStringLiteral("accessories-calculator")));
         }
         m_remoteTable->setItem(tableRow, 2, sizeItem);
         m_remoteTable->setItem(tableRow, 3, new QTableWidgetItem(entry.modified));

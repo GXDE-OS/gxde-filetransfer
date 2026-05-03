@@ -420,6 +420,9 @@ QString RemoteClient::normalizePath(const QString &path) const
     if (result.isEmpty()) {
         result = QStringLiteral("/");
     }
+    if (result == QLatin1String("~") || result.startsWith(QStringLiteral("~/"))) {
+        return QUrl::fromPercentEncoding(result.toUtf8());
+    }
     if (!result.startsWith(QLatin1Char('/'))) {
         result.prepend(QLatin1Char('/'));
     }

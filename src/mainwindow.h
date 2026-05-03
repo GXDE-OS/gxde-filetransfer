@@ -45,6 +45,7 @@ private slots:
     void showTransferCancelled();
     void showRemoteRemoved(const QString &path);
     void showRemoteMoved(const QString &source, const QString &destination);
+    void showTransferError(const QString &message, const QString &details);
     void showError(const QString &message, const QString &details);
     void updateDefaultPort();
     void setLocalPathFromEdit();
@@ -111,6 +112,7 @@ private:
     RemoteClient *m_client = nullptr;
     RemoteClient *m_transferClient = nullptr;
     QVector<RemoteConnection> m_savedSites;
+    QStringList m_pendingUploadDirectories;
     QStringList m_pendingUploadLocalPaths;
     QStringList m_pendingUploadRemotePaths;
     QVector<RemoteEntry> m_pendingDownloads;

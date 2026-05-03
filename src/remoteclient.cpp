@@ -104,6 +104,64 @@ void RemoteClient::download(const RemoteConnection &connection, const QString &r
     m_process->start();
 }
 
+void RemoteClient::makeDirectory(const RemoteConnection &connection, const QString &remotePath)
+{
+    if (isBusy()) {
+        emit failed(tr("A remote operation is already running."), QString());
+        return;
+    }
+
+    m_connection = connection;
+    m_operation = MakeDirectoryOperation;
+    m_cancelled = false;
+    m_directoryPath = normalizePath(remotePath);
+    if (!m_directoryPath.endsWith(QLatin1Char('/'))) {
+        m_directoryPath.append(QLatin1Char('/'));
+    }
+    m_currentUrl = buildUrl(connection, m_directoryPath);
+    m_transferSource = QString();
+    m_transferDestination = m_currentUrl;
+
+    m_process = new QProcess(this);
+    m_process->setProgram(QStringLiteral("curl"));
+    QStringList args;
+    args << QStringLiteral("--silent")
+         << QStringLiteral("--show-error")
+         << QStringLiteral("--globoff")
+         << QStringLiteral("--connect-timeout") << QStringLiteral("15")
+         << QStringLiteral("--max-time") << QStringLiteral("60");
+    if (!connection.username.isEmpty()) {
+        args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
+    }
+
+    const QString protocol = connection.protocol.toLower();
+    if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
+        args << QStringLiteral("--request") << QStringLiteral("MKCOL") << m_currentUrl;
+    } else if (protocol == QLatin1String("sftp")) {
+        args << QStringLiteral("--quote") << QStringLiteral("mkdir %1").arg(m_directoryPath)
+             << buildUrl(connection, QStringLiteral("/"));
+    } else {
+        args << QStringLiteral("--quote") << QStringLiteral("MKD %1").arg(m_directoryPath)
+             << buildUrl(connection, QStringLiteral("/"));
+    }
+
+    m_process->setArguments(args);
+    m_process->setProcessChannelMode(QProcess::SeparateChannels);
+    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &RemoteClient::onFinished);
+    connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        Q_UNUSED(error)
+        if (m_cancelled) {
+            return;
+        }
+        emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
+    });
+
+    emit started(m_currentUrl);
+    emit logMessage(tr("Creating remote folder %1").arg(m_currentUrl));
+    m_process->start();
+}
+
 void RemoteClient::upload(const RemoteConnection &connection, const QString &localPath, const QString &remotePath)
 {
     if (isBusy()) {
@@ -125,6 +183,7 @@ void RemoteClient::upload(const RemoteConnection &connection, const QString &loc
     args << QStringLiteral("--show-error")
          << QStringLiteral("--globoff")
          << QStringLiteral("--progress-bar")
+         << QStringLiteral("--ftp-create-dirs")
          << QStringLiteral("--location")
          << QStringLiteral("--connect-timeout") << QStringLiteral("15")
          << QStringLiteral("--max-time") << QStringLiteral("0");
@@ -275,6 +334,13 @@ void RemoteClient::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
         m_cancelled = false;
         emit cancelled();
         emit logMessage(tr("Transfer cancelled."));
+        return;
+    }
+
+    if (m_operation == MakeDirectoryOperation && (exitStatus != QProcess::NormalExit || exitCode != 0)) {
+        emit logMessage(tr("Remote folder create reported an error, continuing: %1").arg(QString::fromLocal8Bit(errorOutput).trimmed()));
+        emit transferProgress(100);
+        emit transferFinished(m_transferSource, m_transferDestination);
         return;
     }
 

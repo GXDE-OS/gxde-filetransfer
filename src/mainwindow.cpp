@@ -27,6 +27,8 @@
 #include <QMimeData>
 #include <QMessageBox>
 #include <QMouseEvent>
+#include <QPainter>
+#include <QPixmap>
 #include <QPoint>
 #include <QProgressBar>
 #include <QSettings>
@@ -51,11 +53,45 @@ void polishFileTable(QTableWidget *table)
     table->verticalHeader()->hide();
     table->verticalHeader()->setDefaultSectionSize(36);
     table->horizontalHeader()->setHighlightSections(false);
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    table->horizontalHeader()->setStretchLastSection(true);
     table->setStyleSheet(QStringLiteral(
         "QTableWidget { border: 1px solid palette(mid); border-radius: 8px; background: palette(base); alternate-background-color: rgba(0, 0, 0, 5%); }"
         "QTableWidget::item { border: 0; padding: 5px 8px; }"
         "QTableWidget::item:selected { border-radius: 6px; background: palette(highlight); color: palette(highlighted-text); }"
         "QHeaderView::section { border: 0; border-bottom: 1px solid palette(mid); padding: 6px 8px; background: palette(window); font-weight: 600; }"));
+}
+
+QPixmap dragPreviewPixmap(const QStringList &names, const QIcon &icon)
+{
+    const int shown = qMin(names.size(), 3);
+    const int width = 260;
+    const int rowHeight = 30;
+    const int height = 14 + shown * rowHeight + (names.size() > shown ? 22 : 0);
+    QPixmap pixmap(width, height);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(QColor(0, 0, 0, 35));
+    painter.setBrush(QColor(245, 245, 245, 235));
+    painter.drawRoundedRect(pixmap.rect().adjusted(1, 1, -1, -1), 9, 9);
+
+    const QPixmap iconPixmap = icon.pixmap(22, 22);
+    for (int i = 0; i < shown; ++i) {
+        const int y = 8 + i * rowHeight;
+        painter.drawPixmap(12, y + 3, iconPixmap);
+        painter.setPen(QColor(35, 35, 35));
+        painter.drawText(QRect(42, y, width - 54, rowHeight), Qt::AlignVCenter | Qt::TextSingleLine,
+                         painter.fontMetrics().elidedText(names.at(i), Qt::ElideMiddle, width - 54));
+    }
+    if (names.size() > shown) {
+        painter.setPen(QColor(80, 80, 80));
+        painter.drawText(QRect(42, 8 + shown * rowHeight, width - 54, 20), Qt::AlignVCenter,
+                         QObject::tr("+%1 more").arg(names.size() - shown));
+    }
+
+    return pixmap;
 }
 
 bool copyDirectoryRecursively(const QString &sourcePath, const QString &destinationPath)
@@ -122,7 +158,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_transferClient, &RemoteClient::transferProgress, this, &MainWindow::showTransferProgress);
     connect(m_transferClient, &RemoteClient::transferFinished, this, &MainWindow::showTransferFinished);
     connect(m_transferClient, &RemoteClient::cancelled, this, &MainWindow::showTransferCancelled);
-    connect(m_transferClient, &RemoteClient::failed, this, &MainWindow::showError);
+    connect(m_transferClient, &RemoteClient::failed, this, &MainWindow::showTransferError);
     connect(m_transferClient, &RemoteClient::logMessage, this, &MainWindow::appendLog);
 
     loadSavedSites();
@@ -330,6 +366,7 @@ QWidget *MainWindow::createTransferPane()
     m_transferTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_transferTable->setAlternatingRowColors(true);
     m_transferTable->setContextMenuPolicy(Qt::CustomContextMenu);
+    polishFileTable(m_transferTable);
     connect(m_transferTable, &QTableWidget::customContextMenuRequested, this, &MainWindow::showTransferContextMenu);
     layout->addWidget(m_transferTable);
     return pane;
@@ -383,15 +420,22 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
                 && (mouseEvent->pos() - remoteDragStart).manhattanLength() >= QApplication::startDragDistance()) {
                 const QVector<RemoteEntry> entries = selectedRemoteEntries();
                 QStringList remotePaths;
+                QStringList names;
                 for (const RemoteEntry &entry : entries) {
                     remotePaths << entry.path;
+                    names << entry.name;
                 }
                 if (!remotePaths.isEmpty()) {
                     QMimeData *mime = new QMimeData;
                     mime->setData(kRemotePathsMime, remotePaths.join(QLatin1Char('\n')).toUtf8());
                     mime->setData(kXdndDirectSaveMime, entries.first().name.toUtf8());
+                    mime->setProperty("IsDirectSaveMode", true);
                     QDrag *drag = new QDrag(m_remoteTable);
                     drag->setMimeData(mime);
+                    drag->setPixmap(dragPreviewPixmap(names, entries.first().directory
+                                                       ? QIcon::fromTheme(QStringLiteral("folder"))
+                                                       : QIcon::fromTheme(QStringLiteral("text-x-generic"))));
+                    drag->setHotSpot(QPoint(18, 18));
                     drag->exec(Qt::CopyAction | Qt::MoveAction, Qt::CopyAction);
                     const QUrl directSaveUrl = mime->property("DirectSaveUrl").toUrl();
                     if (directSaveUrl.isLocalFile()) {
@@ -466,13 +510,19 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
                 const QStringList paths = selectedLocalPaths();
                 if (!paths.isEmpty()) {
                     QList<QUrl> urls;
+                    QStringList names;
                     for (const QString &path : paths) {
                         urls << QUrl::fromLocalFile(path);
+                        names << QFileInfo(path).fileName();
                     }
                     QMimeData *mime = new QMimeData;
                     mime->setUrls(urls);
                     QDrag *drag = new QDrag(m_localView);
                     drag->setMimeData(mime);
+                    drag->setPixmap(dragPreviewPixmap(names, QFileInfo(paths.first()).isDir()
+                                                       ? QIcon::fromTheme(QStringLiteral("folder"))
+                                                       : QIcon::fromTheme(QStringLiteral("text-x-generic"))));
+                    drag->setHotSpot(QPoint(18, 18));
                     drag->exec(Qt::CopyAction | Qt::MoveAction, Qt::MoveAction);
                     return true;
                 }
@@ -877,7 +927,7 @@ void MainWindow::showTransferFinished(const QString &source, const QString &dest
     setTransferBusy(false);
     updateFirstRunningTransfer(tr("Done"));
     if (m_lastTransferWasUpload) {
-        if (!m_pendingUploadLocalPaths.isEmpty()) {
+        if (!m_pendingUploadDirectories.isEmpty() || !m_pendingUploadLocalPaths.isEmpty()) {
             startNextUpload();
         } else {
             refreshRemote();
@@ -909,6 +959,13 @@ void MainWindow::showTransferCancelled()
 {
     setTransferBusy(false);
     updateFirstRunningTransfer(tr("Cancelled"));
+    m_pendingUploadDirectories.clear();
+    m_pendingUploadLocalPaths.clear();
+    m_pendingUploadRemotePaths.clear();
+    m_pendingDownloads.clear();
+    m_pendingDownloadLocalPaths.clear();
+    m_openDownloadedAfterTransfer = false;
+    m_nextDownloadShouldOpen = false;
 }
 
 void MainWindow::showRemoteRemoved(const QString &path)
@@ -932,6 +989,22 @@ void MainWindow::showRemoteMoved(const QString &source, const QString &destinati
     } else {
         refreshRemote();
     }
+}
+
+void MainWindow::showTransferError(const QString &message, const QString &details)
+{
+    setTransferBusy(false);
+    updateFirstRunningTransfer(tr("Failed"));
+    m_pendingUploadDirectories.clear();
+    m_pendingUploadLocalPaths.clear();
+    m_pendingUploadRemotePaths.clear();
+    m_pendingDownloads.clear();
+    m_pendingDownloadLocalPaths.clear();
+    m_openDownloadedAfterTransfer = false;
+    m_nextDownloadShouldOpen = false;
+    const QString fullMessage = details.isEmpty() ? message : QStringLiteral("%1\n%2").arg(message, details);
+    appendLog(fullMessage);
+    QMessageBox::warning(this, tr("Transfer error"), fullMessage);
 }
 
 void MainWindow::showError(const QString &message, const QString &details)
@@ -1278,15 +1351,26 @@ bool MainWindow::uploadPath(const QString &localPath, const QString &remoteBaseP
 {
     QFileInfo info(localPath);
     if (info.isDir()) {
-        QDirIterator it(localPath, QDir::Files, QDirIterator::Subdirectories);
-        if (!it.hasNext()) {
-            QMessageBox::information(this, tr("Folder upload"), tr("The selected folder does not contain files."));
-            return false;
-        }
+        QDir sourceDir(localPath);
         const QString folderRemoteBase = joinRemotePath(remoteBasePath, info.fileName());
+        if (!m_pendingUploadDirectories.contains(folderRemoteBase)) {
+            m_pendingUploadDirectories << folderRemoteBase;
+        }
+
+        QDirIterator dirIt(localPath, QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+        while (dirIt.hasNext()) {
+            const QString dirPath = dirIt.next();
+            const QString relative = sourceDir.relativeFilePath(dirPath);
+            const QString remoteDir = joinRemotePath(folderRemoteBase, relative);
+            if (!m_pendingUploadDirectories.contains(remoteDir)) {
+                m_pendingUploadDirectories << remoteDir;
+            }
+        }
+
+        QDirIterator it(localPath, QDir::Files, QDirIterator::Subdirectories);
         while (it.hasNext()) {
             const QString filePath = it.next();
-            const QString relative = QDir(localPath).relativeFilePath(filePath);
+            const QString relative = sourceDir.relativeFilePath(filePath);
             m_pendingUploadLocalPaths << filePath;
             m_pendingUploadRemotePaths << joinRemotePath(folderRemoteBase, relative);
         }
@@ -1301,7 +1385,19 @@ bool MainWindow::uploadPath(const QString &localPath, const QString &remoteBaseP
 
 void MainWindow::startNextUpload()
 {
-    if (m_transferClient->isBusy() || m_pendingUploadLocalPaths.isEmpty() || m_pendingUploadRemotePaths.isEmpty()) {
+    if (m_transferClient->isBusy()) {
+        return;
+    }
+
+    if (!m_pendingUploadDirectories.isEmpty()) {
+        const QString remotePath = m_pendingUploadDirectories.takeFirst();
+        m_activeTransferRow = addTransferRow(tr("Create Folder"), QString(), remotePath);
+        m_lastTransferWasUpload = true;
+        m_transferClient->makeDirectory(currentConnection(), remotePath);
+        return;
+    }
+
+    if (m_pendingUploadLocalPaths.isEmpty() || m_pendingUploadRemotePaths.isEmpty()) {
         return;
     }
 

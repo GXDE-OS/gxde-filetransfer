@@ -34,6 +34,7 @@ public:
     bool isBusy() const;
     void list(const RemoteConnection &connection, const QString &path);
     void download(const RemoteConnection &connection, const QString &remotePath, const QString &localPath, bool resume = false);
+    void makeDirectory(const RemoteConnection &connection, const QString &remotePath);
     void upload(const RemoteConnection &connection, const QString &localPath, const QString &remotePath);
     void remove(const RemoteConnection &connection, const QString &remotePath, bool directory);
     void move(const RemoteConnection &connection, const QString &remotePath, const QString &destinationPath);
@@ -58,6 +59,7 @@ private:
     enum Operation {
         ListOperation,
         DownloadOperation,
+        MakeDirectoryOperation,
         UploadOperation,
         RemoveOperation,
         MoveOperation
@@ -79,6 +81,7 @@ private:
     QString m_currentUrl;
     QString m_transferSource;
     QString m_transferDestination;
+    QString m_directoryPath;
     QString m_removePath;
     QString m_moveSourcePath;
     QString m_moveDestinationPath;

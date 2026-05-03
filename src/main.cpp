@@ -1,6 +1,5 @@
 #include "mainwindow.h"
 
-#include <DAboutDialog>
 #include <DApplication>
 #include <DLog>
 
@@ -36,10 +35,6 @@ int main(int argc, char *argv[])
 
     const QString description = QCoreApplication::translate("Application", "A simple and easy-to-use FTP, SFTP, WebDAV and WebDAVS client.");
     app.setApplicationDescription(description);
-
-    DAboutDialog *aboutDialog = app.aboutDialog();
-    aboutDialog->setProductIcon(appIcon);
-    aboutDialog->setDescription(description);
 
     Dtk::Core::DLogManager::registerConsoleAppender();
 

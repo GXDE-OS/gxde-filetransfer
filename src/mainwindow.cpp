@@ -132,7 +132,9 @@ MainWindow::MainWindow(QWidget *parent)
     QWidget *central = new QWidget(this);
     central->setStyleSheet(QStringLiteral(
         "QGroupBox { border: 1px solid palette(mid); border-radius: 8px; margin-top: 12px; padding: 8px; }"
-        "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; }"));
+        "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; }"
+        "QPushButton { padding: 4px 10px; border-radius: 5px; }"
+        "QLineEdit, QComboBox, QSpinBox { min-height: 26px; }"));
     QVBoxLayout *layout = new QVBoxLayout(central);
     layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(10);
@@ -216,9 +218,10 @@ QWidget *MainWindow::createBrowser()
     files->addWidget(createLocalPane());
     files->addWidget(createRemotePane());
     files->setChildrenCollapsible(false);
-    files->setStretchFactor(0, 1);
-    files->setStretchFactor(1, 1);
-    files->setSizes({1, 1});
+    files->setStretchFactor(0, 3);
+    files->setStretchFactor(1, 2);
+    files->setHandleWidth(8);
+    files->setSizes({3, 2});
 
     QSplitter *bottom = new QSplitter(Qt::Horizontal, vertical);
     bottom->addWidget(createTransferPane());
@@ -781,9 +784,15 @@ void MainWindow::deleteSelectedRemote()
     if (QMessageBox::question(this, tr("Delete remote files"), tr("Delete selected remote files?")) != QMessageBox::Yes) {
         return;
     }
+    const QString protocol = m_protocolCombo->currentText().toLower();
+    const bool serverSideDirectoryDelete = protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs");
     m_pendingRemoteDeletes.clear();
     for (const RemoteEntry &entry : entries) {
-        collectRemoteDeletes(entry);
+        if (serverSideDirectoryDelete) {
+            m_pendingRemoteDeletes << entry;
+        } else {
+            collectRemoteDeletes(entry);
+        }
     }
     startNextRemoteDelete();
 }
@@ -816,10 +825,14 @@ void MainWindow::showLocalContextMenu(const QPoint &pos)
 
     QMenu menu(this);
     QAction *openAction = menu.addAction(isDirectory ? tr("Open Folder") : tr("Open File"));
+    openAction->setIcon(QIcon::fromTheme(isDirectory ? QStringLiteral("folder-open") : QStringLiteral("document-open")));
     QAction *uploadAction = menu.addAction(tr("Upload"));
+    uploadAction->setIcon(QIcon::fromTheme(QStringLiteral("go-next")));
     QAction *deleteAction = menu.addAction(tr("Delete"));
+    deleteAction->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
     menu.addSeparator();
     QAction *refreshAction = menu.addAction(tr("Refresh"));
+    refreshAction->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
     openAction->setEnabled(hasSelection);
     uploadAction->setEnabled(hasSelection && !m_transferClient->isBusy());
     deleteAction->setEnabled(hasSelection);
@@ -858,15 +871,21 @@ void MainWindow::showRemoteContextMenu(const QPoint &pos)
     QAction *deleteAction = nullptr;
     if (hasSelection) {
         openAction = menu.addAction(entry.directory ? tr("Open Folder") : tr("Open File"));
+        openAction->setIcon(QIcon::fromTheme(entry.directory ? QStringLiteral("folder-open") : QStringLiteral("document-open")));
         downloadAction = menu.addAction(tr("Download"));
+        downloadAction->setIcon(QIcon::fromTheme(QStringLiteral("go-previous")));
         if (entry.directory) {
             calculateSizeAction = menu.addAction(tr("Calculate Size"));
+            calculateSizeAction->setIcon(QIcon::fromTheme(QStringLiteral("accessories-calculator")));
         }
         deleteAction = menu.addAction(tr("Delete"));
+        deleteAction->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
         menu.addSeparator();
     }
     QAction *refreshAction = menu.addAction(tr("Refresh"));
+    refreshAction->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
     QAction *upAction = menu.addAction(tr("Go Up"));
+    upAction->setIcon(QIcon::fromTheme(QStringLiteral("go-up")));
 
     if (openAction) {
         openAction->setEnabled(entry.directory && !m_client->isBusy());
@@ -985,9 +1004,17 @@ void MainWindow::showEntries(const QString &path, const QVector<RemoteEntry> &en
         m_remoteTable->setItem(tableRow, 0, name);
         m_remoteTable->setItem(tableRow, 1, new QTableWidgetItem(entry.directory ? tr("Folder") : tr("File")));
         QTableWidgetItem *sizeItem = new QTableWidgetItem(entry.directory
-            ? tr("Calculate")
+            ? tr("Calculate size")
             : (entry.size >= 0 ? humanReadableSize(entry.size) : QStringLiteral("-")));
         sizeItem->setData(Qt::UserRole, entry.size);
+        if (entry.directory) {
+            QFont linkFont = sizeItem->font();
+            linkFont.setUnderline(true);
+            sizeItem->setFont(linkFont);
+            sizeItem->setForeground(QColor(0, 102, 204));
+            sizeItem->setToolTip(tr("Click to calculate the actual remote folder size"));
+            sizeItem->setIcon(QIcon::fromTheme(QStringLiteral("accessories-calculator")));
+        }
         m_remoteTable->setItem(tableRow, 2, sizeItem);
         m_remoteTable->setItem(tableRow, 3, new QTableWidgetItem(entry.modified));
     }
@@ -1429,6 +1456,12 @@ void MainWindow::calculateRemoteDirectorySize(int row)
     const qint64 size = calculateRemoteDirectorySize(entry);
     sizeItem->setData(Qt::UserRole, size);
     sizeItem->setText(size >= 0 ? humanReadableSize(size) : tr("Failed"));
+    QFont font = sizeItem->font();
+    font.setUnderline(false);
+    sizeItem->setFont(font);
+    sizeItem->setForeground(QBrush());
+    sizeItem->setIcon(QIcon());
+    sizeItem->setToolTip(QString());
 }
 
 void MainWindow::collectRemoteDeletes(const RemoteEntry &entry)

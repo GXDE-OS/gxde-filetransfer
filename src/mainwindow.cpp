@@ -19,6 +19,7 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
+#include <QKeyEvent>
 #include <QMenu>
 #include <QMimeData>
 #include <QMessageBox>
@@ -185,6 +186,7 @@ QWidget *MainWindow::createLocalPane()
     m_localView->setColumnWidth(1, 90);
     m_localView->setColumnWidth(2, 120);
     m_localView->viewport()->installEventFilter(this);
+    m_localView->installEventFilter(this);
 
     layout->addLayout(tools);
     layout->addWidget(m_localView, 1);
@@ -213,7 +215,7 @@ QWidget *MainWindow::createRemotePane()
     m_remoteUpButton->setIcon(QIcon::fromTheme(QStringLiteral("go-up")));
     m_remoteRefreshButton->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
     m_downloadButton->setIcon(QIcon::fromTheme(QStringLiteral("go-previous")));
-    m_remotePathEdit = new QLineEdit(QStringLiteral("/"), pane);
+    m_remotePathEdit = new QLineEdit(pane);
     m_remotePathEdit->setPlaceholderText(tr("Remote path"));
 
     tools->addWidget(m_remoteStatusLabel);
@@ -239,6 +241,7 @@ QWidget *MainWindow::createRemotePane()
     m_remoteTable->setAcceptDrops(true);
     m_remoteTable->viewport()->setAcceptDrops(true);
     m_remoteTable->viewport()->installEventFilter(this);
+    m_remoteTable->installEventFilter(this);
 
     layout->addLayout(tools);
     layout->addWidget(m_remoteTable, 1);
@@ -278,6 +281,32 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
     static QPoint remoteDragStart;
     static QPoint localDragStart;
+    if (watched == m_remoteTable && event->type() == QEvent::KeyPress) {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+        if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+            const int row = m_remoteTable->currentRow();
+            if (row >= 0) {
+                openRemoteEntry(row, 0);
+                return true;
+            }
+        } else if (keyEvent->key() == Qt::Key_Backspace) {
+            goRemoteUp();
+            return true;
+        }
+    } else if (watched == m_localView && event->type() == QEvent::KeyPress) {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+        if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+            const int row = m_localView->currentRow();
+            if (row >= 0) {
+                openLocalEntry(row, 0);
+                return true;
+            }
+        } else if (keyEvent->key() == Qt::Key_Backspace) {
+            goLocalUp();
+            return true;
+        }
+    }
+
     if (m_remoteTable && watched == m_remoteTable->viewport()) {
         if (event->type() == QEvent::MouseButtonPress) {
             QMouseEvent *mouseEvent = static_cast<QMouseEvent *>(event);
@@ -393,7 +422,12 @@ void MainWindow::connectToRemote()
         return;
     }
 
-    m_client->list(currentConnection(), m_remotePathEdit->text());
+    QString path = m_remotePathEdit->text();
+    const QString protocol = m_protocolCombo->currentText();
+    if (path.isEmpty() && (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs"))) {
+        path = QStringLiteral("/");
+    }
+    m_client->list(currentConnection(), path);
 }
 
 void MainWindow::refreshRemote()
@@ -678,7 +712,7 @@ void MainWindow::loadSelectedSite(int index)
     m_portSpin->setValue(connection.port);
     m_userEdit->setText(connection.username);
     m_passwordEdit->setText(connection.password);
-    m_remotePathEdit->setText(connection.path.isEmpty() ? QStringLiteral("/") : connection.path);
+    m_remotePathEdit->setText(connection.path);
 }
 
 void MainWindow::showEntries(const QString &path, const QVector<RemoteEntry> &entries)

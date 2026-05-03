@@ -27,7 +27,7 @@ void RemoteClient::list(const RemoteConnection &connection, const QString &path)
     m_connection = connection;
     m_operation = ListOperation;
     m_cancelled = false;
-    m_currentPath = normalizePath(path.isEmpty() ? connection.path : path);
+    m_currentPath = path.isEmpty() ? connection.path.trimmed() : normalizePath(path);
     if (m_currentPath != QLatin1String("/") && !m_currentPath.endsWith(QLatin1Char('/'))) {
         m_currentPath.append(QLatin1Char('/'));
     }
@@ -282,7 +282,9 @@ QString RemoteClient::buildUrl(const RemoteConnection &connection, const QString
     if (connection.port > 0) {
         url.setPort(connection.port);
     }
-    url.setPath(normalizePath(path));
+    if (!path.isEmpty()) {
+        url.setPath(normalizePath(path));
+    }
     return url.toString(QUrl::FullyEncoded);
 }
 

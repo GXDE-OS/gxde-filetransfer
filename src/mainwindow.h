@@ -62,6 +62,7 @@ private:
     QStringList selectedLocalPaths() const;
     QVector<RemoteEntry> selectedRemoteEntries() const;
     bool uploadPath(const QString &localPath, const QString &remoteBasePath);
+    QString remoteUrlForPath(const QString &path) const;
     void startNextUpload();
     void startNextDownload();
     void startNextRemoteDelete();
@@ -106,5 +107,7 @@ private:
     QVector<RemoteEntry> m_pendingDownloads;
     QVector<RemoteEntry> m_pendingRemoteDeletes;
     bool m_lastTransferWasUpload = false;
+    bool m_nextDownloadShouldOpen = false;
+    bool m_openDownloadedAfterTransfer = false;
     int m_activeTransferRow = -1;
 };

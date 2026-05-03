@@ -292,6 +292,13 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
                 if (!entries.isEmpty() && !entries.first().directory) {
                     QMimeData *mime = new QMimeData;
                     mime->setText(entries.first().path);
+                    QList<QUrl> urls;
+                    for (const RemoteEntry &entry : entries) {
+                        if (!entry.directory) {
+                            urls << QUrl(remoteUrlForPath(entry.path));
+                        }
+                    }
+                    mime->setUrls(urls);
                     QDrag *drag = new QDrag(m_remoteTable);
                     drag->setMimeData(mime);
                     drag->exec(Qt::CopyAction);
@@ -422,6 +429,7 @@ void MainWindow::openRemoteEntry(int row, int column)
         return;
     }
     if (!isDirectory) {
+        m_nextDownloadShouldOpen = true;
         downloadSelected();
         return;
     }
@@ -471,8 +479,11 @@ void MainWindow::downloadSelected()
     }
     if (m_transferClient->isBusy()) {
         QMessageBox::information(this, tr("Transfer busy"), tr("A transfer is already running. Queueing multiple transfers is not implemented yet."));
+        m_nextDownloadShouldOpen = false;
         return;
     }
+    m_openDownloadedAfterTransfer = m_nextDownloadShouldOpen;
+    m_nextDownloadShouldOpen = false;
     for (const RemoteEntry &entry : entries) {
         if (entry.directory) {
             appendLog(tr("Folder download is not implemented yet: %1").arg(entry.name));
@@ -716,7 +727,10 @@ void MainWindow::showTransferFinished(const QString &source, const QString &dest
         }
     } else {
         loadLocalDirectory(m_localPathEdit->text());
-        QDesktopServices::openUrl(QUrl::fromLocalFile(destination));
+        if (m_openDownloadedAfterTransfer) {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(destination));
+        }
+        m_openDownloadedAfterTransfer = false;
         startNextDownload();
     }
 }
@@ -815,6 +829,29 @@ QString MainWindow::joinRemotePath(const QString &basePath, const QString &name)
         base.append(QLatin1Char('/'));
     }
     return base + name;
+}
+
+QString MainWindow::remoteUrlForPath(const QString &path) const
+{
+    RemoteConnection connection = currentConnection();
+    QString scheme = connection.protocol.toLower();
+    if (scheme == QLatin1String("webdav")) {
+        scheme = QStringLiteral("http");
+    } else if (scheme == QLatin1String("webdavs")) {
+        scheme = QStringLiteral("https");
+    }
+
+    QUrl url;
+    url.setScheme(scheme);
+    url.setHost(connection.host.trimmed());
+    if (connection.port > 0) {
+        url.setPort(connection.port);
+    }
+    url.setPath(path);
+    if (!connection.username.isEmpty()) {
+        url.setUserName(connection.username);
+    }
+    return url.toString(QUrl::FullyEncoded);
 }
 
 void MainWindow::loadLocalDirectory(const QString &path)
@@ -933,6 +970,9 @@ void MainWindow::startNextDownload()
     const QString localPath = QDir(m_localPathEdit->text()).filePath(entry.name);
     bool resume = false;
     if (!confirmDownloadConflict(entry, localPath, &resume)) {
+        if (m_pendingDownloads.isEmpty()) {
+            m_openDownloadedAfterTransfer = false;
+        }
         startNextDownload();
         return;
     }
@@ -1037,7 +1077,9 @@ bool MainWindow::confirmDownloadConflict(const RemoteEntry &entry, const QString
     }
     if (clicked == newerButton) {
         appendLog(tr("Kept existing %1 because exact remote modification comparison is not available yet.").arg(entry.name));
-        QDesktopServices::openUrl(QUrl::fromLocalFile(localPath));
+        if (m_openDownloadedAfterTransfer) {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(localPath));
+        }
         return false;
     }
     if (clicked == largerButton) {
@@ -1046,7 +1088,9 @@ bool MainWindow::confirmDownloadConflict(const RemoteEntry &entry, const QString
             return true;
         }
         appendLog(tr("Kept existing %1 because the local file is larger or equal.").arg(entry.name));
-        QDesktopServices::openUrl(QUrl::fromLocalFile(localPath));
+        if (m_openDownloadedAfterTransfer) {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(localPath));
+        }
         return false;
     }
     return false;

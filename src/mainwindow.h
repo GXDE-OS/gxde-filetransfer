@@ -7,6 +7,7 @@
 #include <QElapsedTimer>
 #include <QLabel>
 #include <QLineEdit>
+#include <QList>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTableWidget>
@@ -36,6 +37,7 @@ private slots:
     void deleteSelectedRemote();
     void openLocalFile();
     void cancelSelectedTransfer();
+    void deleteSelectedTransferRecords();
     void showLocalContextMenu(const QPoint &pos);
     void showRemoteContextMenu(const QPoint &pos);
     void showTransferContextMenu(const QPoint &pos);
@@ -96,6 +98,8 @@ private:
     void appendLog(const QString &message);
     int addTransferRow(const QString &direction, const QString &source, const QString &destination, qint64 totalBytes = -1);
     void updateFirstRunningTransfer(const QString &status);
+    QList<int> transferRowsWithStatus(const QString &status) const;
+    void removeTransferRows(const QList<int> &rows);
     bool confirmDownloadConflict(const RemoteEntry &entry, const QString &localPath, bool *resume);
     void loadSavedSites();
     void persistSavedSites();

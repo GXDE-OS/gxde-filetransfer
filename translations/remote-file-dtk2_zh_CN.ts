@@ -255,6 +255,22 @@
         <translation>删除</translation>
     </message>
     <message>
+        <source>Delete Selected Record</source>
+        <translation>删除选中记录</translation>
+    </message>
+    <message>
+        <source>Delete Running Records</source>
+        <translation>删除进行中记录</translation>
+    </message>
+    <message>
+        <source>Delete Completed Records</source>
+        <translation>删除已完成记录</translation>
+    </message>
+    <message>
+        <source>Delete Failed Records</source>
+        <translation>删除失败记录</translation>
+    </message>
+    <message>
         <source>Please enter a host before saving.</source>
         <translation>保存前请先输入主机。</translation>
     </message>

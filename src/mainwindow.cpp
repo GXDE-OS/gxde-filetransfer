@@ -3,7 +3,6 @@
 #include <DTitlebar>
 #include <DPushButton>
 #include <DSuggestButton>
-#include <DDialog>
 
 #include <QComboBox>
 #include <QCheckBox>
@@ -19,6 +18,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -41,6 +41,8 @@
 #include <QTableWidgetItem>
 #include <QUrl>
 #include <QVBoxLayout>
+
+#include <functional>
 
 DWIDGET_USE_NAMESPACE
 
@@ -133,7 +135,7 @@ MainWindow::MainWindow(QWidget *parent)
     titlebar()->setSeparatorVisible(true);
 
     QMenu *settingsMenu = new QMenu(this);
-    QAction *manageSitesAction = settingsMenu->addAction(QIcon::fromTheme(QStringLiteral("preferences-system")), tr("Settings"));
+    QAction *manageSitesAction = settingsMenu->addAction(tr("Settings"));
     connect(manageSitesAction, &QAction::triggered, this, &MainWindow::showSavedSitesDialog);
     titlebar()->setMenu(settingsMenu);
 
@@ -947,58 +949,108 @@ void MainWindow::showTransferContextMenu(const QPoint &pos)
 
 void MainWindow::showSavedSitesDialog()
 {
-    DDialog dialog(tr("Settings"), tr("Manage saved connections."), this);
-    dialog.setIcon(QIcon::fromTheme(QStringLiteral("preferences-system")), QSize(48, 48));
+    DMainWindow *settingsWindow = new DMainWindow(this);
+    settingsWindow->setAttribute(Qt::WA_DeleteOnClose);
+    settingsWindow->titlebar()->setTitle(tr("Settings"));
+    settingsWindow->titlebar()->setIcon(QIcon::fromTheme(QStringLiteral("preferences-system")));
+    settingsWindow->resize(640, 420);
 
-    QListWidget *list = new QListWidget(&dialog);
-    list->setMinimumSize(460, 260);
-    for (int i = 0; i < m_savedSites.size(); ++i) {
-        QListWidgetItem *item = new QListWidgetItem(QIcon::fromTheme(QStringLiteral("network-server")), siteDisplayName(m_savedSites.at(i)), list);
-        item->setData(Qt::UserRole, i);
-        item->setToolTip(m_savedSites.at(i).path);
-    }
-    dialog.addContent(list);
-    dialog.setOnButtonClickedClose(false);
-    const int closeButton = dialog.addButton(tr("Close"));
-    const int loadButton = dialog.addButton(tr("Load Selected"), false, DDialog::ButtonNormal);
-    const int deleteButton = dialog.addButton(tr("Delete Selected"), false, DDialog::ButtonWarning);
-    dialog.setButtonIcon(loadButton, QIcon::fromTheme(QStringLiteral("document-open")));
-    dialog.setButtonIcon(deleteButton, QIcon::fromTheme(QStringLiteral("edit-delete")));
+    QWidget *central = new QWidget(settingsWindow);
+    QHBoxLayout *layout = new QHBoxLayout(central);
+    layout->setContentsMargins(16, 16, 16, 16);
+    layout->setSpacing(12);
 
-    connect(&dialog, &DDialog::buttonClicked, this, [&](int index, const QString &text) {
-        Q_UNUSED(text)
-        if (index == closeButton) {
-            dialog.close();
+    QListWidget *list = new QListWidget(central);
+    list->setMinimumWidth(240);
+    layout->addWidget(list, 1);
+
+    QGroupBox *detailsGroup = new QGroupBox(tr("Saved Connection"), central);
+    QVBoxLayout *detailsLayout = new QVBoxLayout(detailsGroup);
+    QFormLayout *form = new QFormLayout;
+    QLabel *protocolLabel = new QLabel(detailsGroup);
+    QLabel *hostLabel = new QLabel(detailsGroup);
+    QLabel *portLabel = new QLabel(detailsGroup);
+    QLabel *userLabel = new QLabel(detailsGroup);
+    QLabel *pathLabel = new QLabel(detailsGroup);
+    form->addRow(tr("Protocol"), protocolLabel);
+    form->addRow(tr("Host"), hostLabel);
+    form->addRow(tr("Port"), portLabel);
+    form->addRow(tr("User"), userLabel);
+    form->addRow(tr("Path"), pathLabel);
+    detailsLayout->addLayout(form);
+    detailsLayout->addStretch(1);
+
+    QHBoxLayout *buttons = new QHBoxLayout;
+    DPushButton *loadButton = new DPushButton(tr("Load"), detailsGroup);
+    DPushButton *deleteButton = new DPushButton(tr("Delete"), detailsGroup);
+    loadButton->setIcon(QIcon::fromTheme(QStringLiteral("document-open")));
+    deleteButton->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
+    buttons->addStretch(1);
+    buttons->addWidget(loadButton);
+    buttons->addWidget(deleteButton);
+    detailsLayout->addLayout(buttons);
+    layout->addWidget(detailsGroup, 2);
+
+    settingsWindow->setCentralWidget(central);
+
+    std::function<void()> populateList = [&]() {
+        list->clear();
+        for (int i = 0; i < m_savedSites.size(); ++i) {
+            QListWidgetItem *item = new QListWidgetItem(QIcon::fromTheme(QStringLiteral("network-server")), siteDisplayName(m_savedSites.at(i)), list);
+            item->setData(Qt::UserRole, i);
+            item->setToolTip(m_savedSites.at(i).path);
+        }
+        if (list->count() > 0) {
+            list->setCurrentRow(0);
+        }
+    };
+
+    auto updateDetails = [=]() {
+        const QListWidgetItem *item = list->currentItem();
+        const int index = item ? item->data(Qt::UserRole).toInt() : -1;
+        const bool valid = index >= 0 && index < m_savedSites.size();
+        const RemoteConnection connection = valid ? m_savedSites.at(index) : RemoteConnection();
+        protocolLabel->setText(valid ? connection.protocol : QStringLiteral("-"));
+        hostLabel->setText(valid ? connection.host : QStringLiteral("-"));
+        portLabel->setText(valid ? QString::number(connection.port) : QStringLiteral("-"));
+        userLabel->setText(valid ? connection.username : QStringLiteral("-"));
+        pathLabel->setText(valid ? connection.path : QStringLiteral("-"));
+        loadButton->setEnabled(valid);
+        deleteButton->setEnabled(valid);
+    };
+
+    connect(list, &QListWidget::currentRowChanged, settingsWindow, updateDetails);
+    connect(loadButton, &QPushButton::clicked, settingsWindow, [=]() {
+        const QListWidgetItem *item = list->currentItem();
+        const int index = item ? item->data(Qt::UserRole).toInt() : -1;
+        if (index < 0 || index >= m_savedSites.size()) {
             return;
         }
-        QListWidgetItem *item = list->currentItem();
-        if (!item || (index != loadButton && index != deleteButton)) {
-            return;
-        }
-        const int savedIndex = item->data(Qt::UserRole).toInt();
-        if (savedIndex < 0 || savedIndex >= m_savedSites.size()) {
-            return;
-        }
-        if (index == loadButton) {
-            const RemoteConnection connection = m_savedSites.at(savedIndex);
-            m_protocolCombo->setCurrentText(connection.protocol);
-            m_hostEdit->setText(connection.host);
-            m_portSpin->setValue(connection.port);
-            m_userEdit->setText(connection.username);
-            m_passwordEdit->setText(connection.password);
-            m_remotePathEdit->setText(connection.path);
-            dialog.close();
-        } else if (index == deleteButton) {
-            m_savedSites.removeAt(savedIndex);
-            persistSavedSites();
-            loadSavedSites();
-            delete list->takeItem(list->row(item));
-            for (int row = 0; row < list->count(); ++row) {
-                list->item(row)->setData(Qt::UserRole, row);
-            }
-        }
+        const RemoteConnection connection = m_savedSites.at(index);
+        m_protocolCombo->setCurrentText(connection.protocol);
+        m_hostEdit->setText(connection.host);
+        m_portSpin->setValue(connection.port);
+        m_userEdit->setText(connection.username);
+        m_passwordEdit->setText(connection.password);
+        m_remotePathEdit->setText(connection.path);
+        settingsWindow->close();
     });
-    dialog.exec();
+    connect(deleteButton, &QPushButton::clicked, settingsWindow, [=]() {
+        const QListWidgetItem *item = list->currentItem();
+        const int index = item ? item->data(Qt::UserRole).toInt() : -1;
+        if (index < 0 || index >= m_savedSites.size()) {
+            return;
+        }
+        m_savedSites.removeAt(index);
+        persistSavedSites();
+        loadSavedSites();
+        populateList();
+        updateDetails();
+    });
+
+    populateList();
+    updateDetails();
+    settingsWindow->show();
 }
 
 void MainWindow::saveCurrentSite()

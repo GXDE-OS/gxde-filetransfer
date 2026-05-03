@@ -1,9 +1,11 @@
 #include "mainwindow.h"
 
+#include <DAboutDialog>
 #include <DApplication>
 #include <DLog>
 
 #include <QCommandLineParser>
+#include <QCoreApplication>
 #include <QIcon>
 #include <QLocale>
 #include <QTranslator>
@@ -20,18 +22,29 @@ int main(int argc, char *argv[])
     app.setApplicationName("gxde-filetransfer");
     app.setApplicationDisplayName("GXDE File Transfer");
     app.setApplicationVersion("0.1");
-    app.setWindowIcon(QIcon(QStringLiteral(":/icons/gxde-filetransfer.svg")));
+    const QIcon appIcon(QStringLiteral(":/icons/gxde-filetransfer.svg"));
+    app.setWindowIcon(appIcon);
+    app.setProductIcon(appIcon);
     app.loadTranslator();
 
     QTranslator translator;
-    if (translator.load(QStringLiteral(":/translations/remote-file-dtk2_%1.qm").arg(QLocale::system().name()))) {
+    const QString translatorName = QStringLiteral("remote-file-dtk2_%1.qm").arg(QLocale::system().name());
+    if (translator.load(QStringLiteral("/usr/share/gxde-filetransfer/translations/%1").arg(translatorName))
+        || translator.load(QStringLiteral(":/translations/%1").arg(translatorName))) {
         app.installTranslator(&translator);
     }
+
+    const QString description = QCoreApplication::translate("Application", "A simple and easy-to-use FTP, SFTP, WebDAV and WebDAVS client.");
+    app.setApplicationDescription(description);
+
+    DAboutDialog *aboutDialog = app.aboutDialog();
+    aboutDialog->setProductIcon(appIcon);
+    aboutDialog->setDescription(description);
 
     Dtk::Core::DLogManager::registerConsoleAppender();
 
     QCommandLineParser parser;
-    parser.setApplicationDescription("GXDE file transfer client for FTP, SFTP and WebDAV.");
+    parser.setApplicationDescription(description);
     parser.addHelpOption();
     parser.addVersionOption();
     parser.process(app);

@@ -27,5 +27,7 @@ desktop.files = data/gxde-filetransfer.desktop
 desktop.path = /usr/share/applications
 icons.files = assets/gxde-filetransfer.svg
 icons.path = /usr/share/icons/hicolor/scalable/apps
+translationfiles.files = translations/remote-file-dtk2_zh_CN.qm
+translationfiles.path = /usr/share/gxde-filetransfer/translations
 
-INSTALLS += target desktop icons
+INSTALLS += target desktop icons translationfiles

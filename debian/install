@@ -1,3 +1,4 @@
 gxde-filetransfer usr/bin
 data/gxde-filetransfer.desktop usr/share/applications
 assets/gxde-filetransfer.svg usr/share/icons/hicolor/scalable/apps
+translations/remote-file-dtk2_zh_CN.qm usr/share/gxde-filetransfer/translations

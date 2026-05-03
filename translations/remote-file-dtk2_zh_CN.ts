@@ -2,6 +2,13 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_CN">
 <context>
+    <name>Application</name>
+    <message>
+        <source>A simple and easy-to-use FTP, SFTP, WebDAV and WebDAVS client.</source>
+        <translation>简单好用的 FTP, SFTP, WebDAV 和 WebDAVS 客户端</translation>
+    </message>
+</context>
+<context>
     <name>MainWindow</name>
     <message>
         <source>Connection</source>

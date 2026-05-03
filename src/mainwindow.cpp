@@ -3,6 +3,7 @@
 #include <DTitlebar>
 #include <DPushButton>
 #include <DSuggestButton>
+#include <DDialog>
 
 #include <QComboBox>
 #include <QCheckBox>
@@ -123,6 +124,18 @@ bool copyDirectoryRecursively(const QString &sourcePath, const QString &destinat
 
     return true;
 }
+
+QString protocolDisplayName(const QString &protocol)
+{
+    const QString normalized = protocol.toLower();
+    if (normalized == QLatin1String("webdav")) {
+        return QStringLiteral("WebDAV");
+    }
+    if (normalized == QLatin1String("webdavs")) {
+        return QStringLiteral("WebDAVS");
+    }
+    return normalized.toUpper();
+}
 }
 
 MainWindow::MainWindow(QWidget *parent)
@@ -186,7 +199,7 @@ QWidget *MainWindow::createConnectionBar()
     m_siteCombo = new QComboBox(bar);
     m_siteCombo->setMinimumWidth(160);
     m_protocolCombo = new QComboBox(bar);
-    m_protocolCombo->addItems({QStringLiteral("ftp"), QStringLiteral("sftp"), QStringLiteral("webdav"), QStringLiteral("webdavs")});
+    m_protocolCombo->addItems({QStringLiteral("FTP"), QStringLiteral("SFTP"), QStringLiteral("WebDAV"), QStringLiteral("WebDAVS")});
     m_hostEdit = new QLineEdit(bar);
     m_hostEdit->setPlaceholderText(tr("Host"));
     m_portSpin = new QSpinBox(bar);
@@ -244,11 +257,11 @@ QWidget *MainWindow::createBrowser()
     m_log->setPlaceholderText(tr("Connection log"));
     logLayout->addWidget(m_log);
     bottom->addWidget(logGroup);
-    bottom->setStretchFactor(0, 2);
-    bottom->setStretchFactor(1, 1);
+    bottom->setStretchFactor(0, 3);
+    bottom->setStretchFactor(1, 2);
     bottom->setChildrenCollapsible(false);
     bottom->setHandleWidth(8);
-    bottom->setSizes({2, 1});
+    bottom->setSizes({3, 2});
 
     vertical->addWidget(files);
     vertical->addWidget(bottom);
@@ -263,6 +276,7 @@ QWidget *MainWindow::createBrowser()
 QWidget *MainWindow::createLocalPane()
 {
     QGroupBox *pane = new QGroupBox(tr("Local Files"), this);
+    pane->setMinimumWidth(560);
     QVBoxLayout *layout = new QVBoxLayout(pane);
     layout->setContentsMargins(8, 8, 8, 8);
 
@@ -372,6 +386,7 @@ QWidget *MainWindow::createRemotePane()
 QWidget *MainWindow::createTransferPane()
 {
     QGroupBox *pane = new QGroupBox(tr("Transfers"), this);
+    pane->setMinimumWidth(560);
     QVBoxLayout *layout = new QVBoxLayout(pane);
     layout->setContentsMargins(8, 8, 8, 8);
 
@@ -633,7 +648,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
 RemoteConnection MainWindow::currentConnection() const
 {
     RemoteConnection connection;
-    connection.protocol = m_protocolCombo->currentText();
+    connection.protocol = m_protocolCombo->currentText().toLower();
     connection.host = m_hostEdit->text();
     connection.port = m_portSpin->value();
     connection.username = m_userEdit->text();
@@ -650,7 +665,7 @@ void MainWindow::connectToRemote()
     }
 
     QString path = m_remotePathEdit->text();
-    const QString protocol = m_protocolCombo->currentText();
+    const QString protocol = m_protocolCombo->currentText().toLower();
     if (path.isEmpty()) {
         if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
             path = QStringLiteral("/");
@@ -949,13 +964,15 @@ void MainWindow::showTransferContextMenu(const QPoint &pos)
 
 void MainWindow::showSavedSitesDialog()
 {
-    DMainWindow *settingsWindow = new DMainWindow(this);
-    settingsWindow->setAttribute(Qt::WA_DeleteOnClose);
-    settingsWindow->titlebar()->setTitle(tr("Settings"));
-    settingsWindow->titlebar()->setIcon(QIcon::fromTheme(QStringLiteral("preferences-system")));
-    settingsWindow->resize(640, 420);
+    DDialog dialog(this);
+    dialog.setIcon(QIcon::fromTheme(QStringLiteral("preferences-system")), QSize(48, 48));
+    dialog.setTitle(tr("Settings"));
+    dialog.setMessage(tr("Manage saved remote connections"));
+    dialog.addButton(tr("Close"), true);
+    dialog.resize(720, 480);
 
-    QWidget *central = new QWidget(settingsWindow);
+    QWidget *central = new QWidget(&dialog);
+    central->setMinimumSize(680, 360);
     QHBoxLayout *layout = new QHBoxLayout(central);
     layout->setContentsMargins(16, 16, 16, 16);
     layout->setSpacing(12);
@@ -967,31 +984,82 @@ void MainWindow::showSavedSitesDialog()
     QGroupBox *detailsGroup = new QGroupBox(tr("Saved Connection"), central);
     QVBoxLayout *detailsLayout = new QVBoxLayout(detailsGroup);
     QFormLayout *form = new QFormLayout;
-    QLabel *protocolLabel = new QLabel(detailsGroup);
-    QLabel *hostLabel = new QLabel(detailsGroup);
-    QLabel *portLabel = new QLabel(detailsGroup);
-    QLabel *userLabel = new QLabel(detailsGroup);
-    QLabel *pathLabel = new QLabel(detailsGroup);
-    form->addRow(tr("Protocol"), protocolLabel);
-    form->addRow(tr("Host"), hostLabel);
-    form->addRow(tr("Port"), portLabel);
-    form->addRow(tr("User"), userLabel);
-    form->addRow(tr("Path"), pathLabel);
+    QComboBox *protocolCombo = new QComboBox(detailsGroup);
+    protocolCombo->addItems({QStringLiteral("FTP"), QStringLiteral("SFTP"), QStringLiteral("WebDAV"), QStringLiteral("WebDAVS")});
+    QLineEdit *hostEdit = new QLineEdit(detailsGroup);
+    QSpinBox *portSpin = new QSpinBox(detailsGroup);
+    portSpin->setRange(0, 65535);
+    portSpin->setSpecialValueText(tr("Auto"));
+    QLineEdit *userEdit = new QLineEdit(detailsGroup);
+    QLineEdit *passwordEdit = new QLineEdit(detailsGroup);
+    passwordEdit->setEchoMode(QLineEdit::Password);
+    QLineEdit *pathEdit = new QLineEdit(detailsGroup);
+    pathEdit->setPlaceholderText(QStringLiteral("/"));
+    form->addRow(tr("Protocol"), protocolCombo);
+    form->addRow(tr("Host"), hostEdit);
+    form->addRow(tr("Port"), portSpin);
+    form->addRow(tr("User"), userEdit);
+    form->addRow(tr("Password"), passwordEdit);
+    form->addRow(tr("Path"), pathEdit);
     detailsLayout->addLayout(form);
     detailsLayout->addStretch(1);
 
     QHBoxLayout *buttons = new QHBoxLayout;
+    DPushButton *newButton = new DPushButton(tr("New"), detailsGroup);
+    DPushButton *saveButton = new DPushButton(tr("Save"), detailsGroup);
     DPushButton *loadButton = new DPushButton(tr("Load"), detailsGroup);
     DPushButton *deleteButton = new DPushButton(tr("Delete"), detailsGroup);
+    newButton->setIcon(QIcon::fromTheme(QStringLiteral("document-new")));
+    saveButton->setIcon(QIcon::fromTheme(QStringLiteral("document-save")));
     loadButton->setIcon(QIcon::fromTheme(QStringLiteral("document-open")));
     deleteButton->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
+    buttons->addWidget(newButton);
     buttons->addStretch(1);
+    buttons->addWidget(saveButton);
     buttons->addWidget(loadButton);
     buttons->addWidget(deleteButton);
     detailsLayout->addLayout(buttons);
     layout->addWidget(detailsGroup, 2);
 
-    settingsWindow->setCentralWidget(central);
+    dialog.addContent(central, Qt::AlignCenter);
+
+    auto defaultPort = [](const QString &protocol) {
+        const QString normalized = protocol.toLower();
+        if (normalized == QLatin1String("ftp")) {
+            return 21;
+        }
+        if (normalized == QLatin1String("sftp")) {
+            return 22;
+        }
+        if (normalized == QLatin1String("webdavs")) {
+            return 443;
+        }
+        return 80;
+    };
+
+    auto clearForm = [=]() {
+        list->clearSelection();
+        list->setCurrentRow(-1);
+        protocolCombo->setCurrentText(QStringLiteral("FTP"));
+        hostEdit->clear();
+        portSpin->setValue(defaultPort(protocolCombo->currentText()));
+        userEdit->clear();
+        passwordEdit->clear();
+        pathEdit->setText(QStringLiteral("/"));
+        loadButton->setEnabled(false);
+        deleteButton->setEnabled(false);
+    };
+
+    auto connectionFromForm = [=]() {
+        RemoteConnection connection;
+        connection.protocol = protocolCombo->currentText().toLower();
+        connection.host = hostEdit->text().trimmed();
+        connection.port = portSpin->value();
+        connection.username = userEdit->text();
+        connection.password = passwordEdit->text();
+        connection.path = pathEdit->text().trimmed().isEmpty() ? QStringLiteral("/") : pathEdit->text().trimmed();
+        return connection;
+    };
 
     std::function<void()> populateList = [&]() {
         list->clear();
@@ -1009,33 +1077,71 @@ void MainWindow::showSavedSitesDialog()
         const QListWidgetItem *item = list->currentItem();
         const int index = item ? item->data(Qt::UserRole).toInt() : -1;
         const bool valid = index >= 0 && index < m_savedSites.size();
-        const RemoteConnection connection = valid ? m_savedSites.at(index) : RemoteConnection();
-        protocolLabel->setText(valid ? connection.protocol : QStringLiteral("-"));
-        hostLabel->setText(valid ? connection.host : QStringLiteral("-"));
-        portLabel->setText(valid ? QString::number(connection.port) : QStringLiteral("-"));
-        userLabel->setText(valid ? connection.username : QStringLiteral("-"));
-        pathLabel->setText(valid ? connection.path : QStringLiteral("-"));
+        if (valid) {
+            const RemoteConnection connection = m_savedSites.at(index);
+            protocolCombo->setCurrentText(protocolDisplayName(connection.protocol));
+            hostEdit->setText(connection.host);
+            portSpin->setValue(connection.port);
+            userEdit->setText(connection.username);
+            passwordEdit->setText(connection.password);
+            pathEdit->setText(connection.path);
+        }
         loadButton->setEnabled(valid);
         deleteButton->setEnabled(valid);
     };
 
-    connect(list, &QListWidget::currentRowChanged, settingsWindow, updateDetails);
-    connect(loadButton, &QPushButton::clicked, settingsWindow, [=]() {
+    connect(protocolCombo, &QComboBox::currentTextChanged, &dialog, [=](const QString &protocol) {
+        portSpin->setValue(defaultPort(protocol));
+    });
+    connect(list, &QListWidget::currentRowChanged, &dialog, updateDetails);
+    connect(newButton, &QPushButton::clicked, &dialog, clearForm);
+    connect(saveButton, &QPushButton::clicked, &dialog, [=, &dialog, &populateList]() {
+        const RemoteConnection connection = connectionFromForm();
+        if (connection.host.isEmpty()) {
+            QMessageBox::warning(&dialog, tr("Missing host"), tr("Please enter a host before saving."));
+            return;
+        }
+
+        const QListWidgetItem *item = list->currentItem();
+        const int selectedIndex = item ? item->data(Qt::UserRole).toInt() : -1;
+        int saveIndex = selectedIndex >= 0 && selectedIndex < m_savedSites.size() ? selectedIndex : -1;
+        if (saveIndex < 0) {
+            const QString name = siteDisplayName(connection);
+            for (int i = 0; i < m_savedSites.size(); ++i) {
+                if (siteDisplayName(m_savedSites.at(i)) == name) {
+                    saveIndex = i;
+                    break;
+                }
+            }
+        }
+
+        if (saveIndex >= 0) {
+            m_savedSites[saveIndex] = connection;
+        } else {
+            m_savedSites.append(connection);
+            saveIndex = m_savedSites.size() - 1;
+        }
+        persistSavedSites();
+        loadSavedSites();
+        populateList();
+        list->setCurrentRow(saveIndex);
+    });
+    connect(loadButton, &QPushButton::clicked, &dialog, [=, &dialog]() {
         const QListWidgetItem *item = list->currentItem();
         const int index = item ? item->data(Qt::UserRole).toInt() : -1;
         if (index < 0 || index >= m_savedSites.size()) {
             return;
         }
         const RemoteConnection connection = m_savedSites.at(index);
-        m_protocolCombo->setCurrentText(connection.protocol);
+        m_protocolCombo->setCurrentText(protocolDisplayName(connection.protocol));
         m_hostEdit->setText(connection.host);
         m_portSpin->setValue(connection.port);
         m_userEdit->setText(connection.username);
         m_passwordEdit->setText(connection.password);
         m_remotePathEdit->setText(connection.path);
-        settingsWindow->close();
+        dialog.accept();
     });
-    connect(deleteButton, &QPushButton::clicked, settingsWindow, [=]() {
+    connect(deleteButton, &QPushButton::clicked, &dialog, [=, &populateList]() {
         const QListWidgetItem *item = list->currentItem();
         const int index = item ? item->data(Qt::UserRole).toInt() : -1;
         if (index < 0 || index >= m_savedSites.size()) {
@@ -1049,8 +1155,12 @@ void MainWindow::showSavedSitesDialog()
     });
 
     populateList();
-    updateDetails();
-    settingsWindow->show();
+    if (list->count() > 0) {
+        updateDetails();
+    } else {
+        clearForm();
+    }
+    dialog.exec();
 }
 
 void MainWindow::saveCurrentSite()
@@ -1088,7 +1198,7 @@ void MainWindow::loadSelectedSite(int index)
     }
 
     const RemoteConnection connection = m_savedSites.at(savedIndex);
-    m_protocolCombo->setCurrentText(connection.protocol);
+    m_protocolCombo->setCurrentText(protocolDisplayName(connection.protocol));
     m_hostEdit->setText(connection.host);
     m_portSpin->setValue(connection.port);
     m_userEdit->setText(connection.username);
@@ -1240,7 +1350,7 @@ void MainWindow::showError(const QString &message, const QString &details)
 
 void MainWindow::updateDefaultPort()
 {
-    const QString protocol = m_protocolCombo->currentText();
+    const QString protocol = m_protocolCombo->currentText().toLower();
     if (protocol == QLatin1String("ftp")) {
         m_portSpin->setValue(21);
     } else if (protocol == QLatin1String("sftp")) {
@@ -2079,7 +2189,7 @@ void MainWindow::persistSavedSites()
 
 QString MainWindow::siteDisplayName(const RemoteConnection &connection) const
 {
-    return QStringLiteral("%1://%2:%3").arg(connection.protocol, connection.host).arg(connection.port);
+    return QStringLiteral("%1://%2:%3").arg(protocolDisplayName(connection.protocol), connection.host).arg(connection.port);
 }
 
 QString MainWindow::selectedLocalPath() const

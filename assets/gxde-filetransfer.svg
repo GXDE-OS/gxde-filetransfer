@@ -4,15 +4,65 @@
       <stop offset="0" stop-color="#57c7ff"/>
       <stop offset="1" stop-color="#2f6bff"/>
     </linearGradient>
-    <linearGradient id="card" x1="26" y1="32" x2="102" y2="96" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.96"/>
-      <stop offset="1" stop-color="#dfeaff" stop-opacity="0.94"/>
+
+    <linearGradient id="card" x1="24" y1="26" x2="104" y2="102" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.98"/>
+      <stop offset="1" stop-color="#dfeaff" stop-opacity="0.95"/>
     </linearGradient>
+
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.16"/>
+    </filter>
   </defs>
+
+  <!-- 背景 -->
   <rect x="10" y="10" width="108" height="108" rx="28" fill="url(#bg)"/>
-  <path d="M34 38h27l8 10h25c5 0 9 4 9 9v29c0 6-4 10-10 10H35c-6 0-10-4-10-10V48c0-6 4-10 9-10z" fill="url(#card)"/>
-  <path d="M42 65h37" stroke="#2463eb" stroke-width="8" stroke-linecap="round"/>
-  <path d="M68 52l15 13-15 13" fill="none" stroke="#2463eb" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M86 78H49" stroke="#00a66c" stroke-width="8" stroke-linecap="round"/>
-  <path d="M60 91L45 78l15-13" fill="none" stroke="#00a66c" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- 文件夹 -->
+  <g filter="url(#shadow)">
+    <!-- 文件夹主体（高度增加） -->
+    <path
+      d="M32 34h28l9 11h24c6 0 10 4 10 10v37c0 7-5 12-12 12H37c-7 0-12-5-12-12V46c0-7 5-12 12-12z"
+      fill="url(#card)"
+    />
+
+    <!-- 文件夹顶部高光 -->
+    <path
+      d="M33 43h59c5 0 8 3 8 8v3H25v-8c0-7 5-12 8-12z"
+      fill="#ffffff"
+      opacity="0.22"
+    />
+  </g>
+
+  <!-- 蓝色箭头 -->
+  <path
+    d="M42 63h36"
+    stroke="#2463eb"
+    stroke-width="8"
+    stroke-linecap="round"
+  />
+  <path
+    d="M67 50l15 13-15 13"
+    fill="none"
+    stroke="#2463eb"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- 绿色箭头 -->
+  <path
+    d="M86 81H50"
+    stroke="#00a66c"
+    stroke-width="8"
+    stroke-linecap="round"
+  />
+  <path
+    d="M61 94L46 81l15-13"
+    fill="none"
+    stroke="#00a66c"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
 </svg>

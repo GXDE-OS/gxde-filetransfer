@@ -292,6 +292,9 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         } else if (keyEvent->key() == Qt::Key_Backspace) {
             goRemoteUp();
             return true;
+        } else if (keyEvent->key() == Qt::Key_Delete) {
+            deleteSelectedRemote();
+            return true;
         }
     } else if (watched == m_localView && event->type() == QEvent::KeyPress) {
         QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
@@ -303,6 +306,9 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
             }
         } else if (keyEvent->key() == Qt::Key_Backspace) {
             goLocalUp();
+            return true;
+        } else if (keyEvent->key() == Qt::Key_Delete) {
+            deleteSelectedLocal();
             return true;
         }
     }

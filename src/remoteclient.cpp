@@ -302,6 +302,10 @@ QString RemoteClient::normalizePath(const QString &path) const
 
 QString RemoteClient::joinPath(const QString &basePath, const QString &name) const
 {
+    if (basePath.trimmed().isEmpty()) {
+        return name;
+    }
+
     QString base = normalizePath(basePath);
     if (!base.endsWith(QLatin1Char('/'))) {
         base.append(QLatin1Char('/'));

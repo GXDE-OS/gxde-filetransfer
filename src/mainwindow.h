@@ -38,6 +38,7 @@ private slots:
     void showLocalContextMenu(const QPoint &pos);
     void showRemoteContextMenu(const QPoint &pos);
     void showTransferContextMenu(const QPoint &pos);
+    void showSavedSitesDialog();
     void saveCurrentSite();
     void loadSelectedSite(int index);
     void showEntries(const QString &path, const QVector<RemoteEntry> &entries);

@@ -3,6 +3,7 @@
 #include <DTitlebar>
 #include <DPushButton>
 #include <DSuggestButton>
+#include <DDialog>
 
 #include <QComboBox>
 #include <QCheckBox>
@@ -23,6 +24,7 @@
 #include <QHeaderView>
 #include <QIcon>
 #include <QKeyEvent>
+#include <QListWidget>
 #include <QMenu>
 #include <QMimeData>
 #include <QMessageBox>
@@ -126,8 +128,14 @@ MainWindow::MainWindow(QWidget *parent)
     , m_client(new RemoteClient(this))
     , m_transferClient(new RemoteClient(this))
 {
-    titlebar()->setTitle(tr("Remote File DTK2"));
+    titlebar()->setTitle(tr("GXDE File Transfer"));
+    titlebar()->setIcon(QIcon(QStringLiteral(":/icons/gxde-filetransfer.svg")));
     titlebar()->setSeparatorVisible(true);
+
+    QMenu *settingsMenu = new QMenu(this);
+    QAction *manageSitesAction = settingsMenu->addAction(QIcon::fromTheme(QStringLiteral("preferences-system")), tr("Settings"));
+    connect(manageSitesAction, &QAction::triggered, this, &MainWindow::showSavedSitesDialog);
+    titlebar()->setMenu(settingsMenu);
 
     QWidget *central = new QWidget(this);
     central->setStyleSheet(QStringLiteral(
@@ -935,6 +943,62 @@ void MainWindow::showTransferContextMenu(const QPoint &pos)
     if (chosen == cancelAction) {
         cancelSelectedTransfer();
     }
+}
+
+void MainWindow::showSavedSitesDialog()
+{
+    DDialog dialog(tr("Settings"), tr("Manage saved connections."), this);
+    dialog.setIcon(QIcon::fromTheme(QStringLiteral("preferences-system")), QSize(48, 48));
+
+    QListWidget *list = new QListWidget(&dialog);
+    list->setMinimumSize(460, 260);
+    for (int i = 0; i < m_savedSites.size(); ++i) {
+        QListWidgetItem *item = new QListWidgetItem(QIcon::fromTheme(QStringLiteral("network-server")), siteDisplayName(m_savedSites.at(i)), list);
+        item->setData(Qt::UserRole, i);
+        item->setToolTip(m_savedSites.at(i).path);
+    }
+    dialog.addContent(list);
+    dialog.setOnButtonClickedClose(false);
+    const int closeButton = dialog.addButton(tr("Close"));
+    const int loadButton = dialog.addButton(tr("Load Selected"), false, DDialog::ButtonNormal);
+    const int deleteButton = dialog.addButton(tr("Delete Selected"), false, DDialog::ButtonWarning);
+    dialog.setButtonIcon(loadButton, QIcon::fromTheme(QStringLiteral("document-open")));
+    dialog.setButtonIcon(deleteButton, QIcon::fromTheme(QStringLiteral("edit-delete")));
+
+    connect(&dialog, &DDialog::buttonClicked, this, [&](int index, const QString &text) {
+        Q_UNUSED(text)
+        if (index == closeButton) {
+            dialog.close();
+            return;
+        }
+        QListWidgetItem *item = list->currentItem();
+        if (!item || (index != loadButton && index != deleteButton)) {
+            return;
+        }
+        const int savedIndex = item->data(Qt::UserRole).toInt();
+        if (savedIndex < 0 || savedIndex >= m_savedSites.size()) {
+            return;
+        }
+        if (index == loadButton) {
+            const RemoteConnection connection = m_savedSites.at(savedIndex);
+            m_protocolCombo->setCurrentText(connection.protocol);
+            m_hostEdit->setText(connection.host);
+            m_portSpin->setValue(connection.port);
+            m_userEdit->setText(connection.username);
+            m_passwordEdit->setText(connection.password);
+            m_remotePathEdit->setText(connection.path);
+            dialog.close();
+        } else if (index == deleteButton) {
+            m_savedSites.removeAt(savedIndex);
+            persistSavedSites();
+            loadSavedSites();
+            delete list->takeItem(list->row(item));
+            for (int row = 0; row < list->count(); ++row) {
+                list->item(row)->setData(Qt::UserRole, row);
+            }
+        }
+    });
+    dialog.exec();
 }
 
 void MainWindow::saveCurrentSite()

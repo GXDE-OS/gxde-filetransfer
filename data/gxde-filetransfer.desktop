@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=GXDE File Transfer
+Comment=Transfer files with FTP, SFTP and WebDAV
+Exec=gxde-filetransfer
+Icon=gxde-filetransfer
+Terminal=false
+Categories=Network;FileTransfer;FileManager;

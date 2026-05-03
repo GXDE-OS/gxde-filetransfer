@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file alias="gxde-filetransfer.svg">assets/gxde-filetransfer.svg</file>
+    </qresource>
+</RCC>

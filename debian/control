@@ -1,0 +1,14 @@
+Source: gxde-filetransfer
+Section: net
+Priority: optional
+Maintainer: GXDE Team <team@gxde.org>
+Build-Depends: debhelper-compat (= 13), qtbase5-dev, qttools5-dev-tools, pkg-config, libdtkwidget2-dev, libdtkcore-dev
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: gxde-filetransfer
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, curl
+Description: GXDE file transfer client
+ A DTK-based file transfer client for browsing and transferring files over
+ FTP, SFTP and WebDAV.

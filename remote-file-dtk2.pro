@@ -3,7 +3,7 @@ QT += core gui widgets network xml
 CONFIG += c++11 link_pkgconfig
 PKGCONFIG += dtkwidget dtkcore
 
-TARGET = remote-file-dtk2
+TARGET = gxde-filetransfer
 TEMPLATE = app
 
 SOURCES += \
@@ -16,7 +16,16 @@ HEADERS += \
     src/remoteclient.h
 
 RESOURCES += \
-    translations.qrc
+    translations.qrc \
+    app.qrc
 
 TRANSLATIONS += \
     translations/remote-file-dtk2_zh_CN.ts
+
+target.path = /usr/bin
+desktop.files = data/gxde-filetransfer.desktop
+desktop.path = /usr/share/applications
+icons.files = assets/gxde-filetransfer.svg
+icons.path = /usr/share/icons/hicolor/scalable/apps
+
+INSTALLS += target desktop icons

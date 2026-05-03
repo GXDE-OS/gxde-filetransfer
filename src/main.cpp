@@ -4,6 +4,7 @@
 #include <DLog>
 
 #include <QCommandLineParser>
+#include <QIcon>
 #include <QLocale>
 #include <QTranslator>
 
@@ -15,10 +16,11 @@ int main(int argc, char *argv[])
     DApplication::loadDXcbPlugin();
 
     DApplication app(argc, argv);
-    app.setOrganizationName("remote-file-dtk2");
-    app.setApplicationName("Remote File DTK2");
-    app.setApplicationDisplayName("Remote File DTK2");
-    app.setApplicationVersion("0.1.0");
+    app.setOrganizationName("gxde");
+    app.setApplicationName("gxde-filetransfer");
+    app.setApplicationDisplayName("GXDE File Transfer");
+    app.setApplicationVersion("0.1");
+    app.setWindowIcon(QIcon(QStringLiteral(":/icons/gxde-filetransfer.svg")));
     app.loadTranslator();
 
     QTranslator translator;
@@ -29,7 +31,7 @@ int main(int argc, char *argv[])
     Dtk::Core::DLogManager::registerConsoleAppender();
 
     QCommandLineParser parser;
-    parser.setApplicationDescription("DTK2 remote file client for FTP, SFTP and WebDAV.");
+    parser.setApplicationDescription("GXDE file transfer client for FTP, SFTP and WebDAV.");
     parser.addHelpOption();
     parser.addVersionOption();
     parser.process(app);

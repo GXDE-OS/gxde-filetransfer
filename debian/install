@@ -1,0 +1,3 @@
+gxde-filetransfer usr/bin
+data/gxde-filetransfer.desktop usr/share/applications
+assets/gxde-filetransfer.svg usr/share/icons/hicolor/scalable/apps

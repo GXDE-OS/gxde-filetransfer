@@ -4,6 +4,7 @@
 
 #include <DMainWindow>
 
+#include <QElapsedTimer>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
@@ -93,7 +94,7 @@ private:
     void setBrowsingBusy(bool busy);
     void setTransferBusy(bool busy);
     void appendLog(const QString &message);
-    int addTransferRow(const QString &direction, const QString &source, const QString &destination);
+    int addTransferRow(const QString &direction, const QString &source, const QString &destination, qint64 totalBytes = -1);
     void updateFirstRunningTransfer(const QString &status);
     bool confirmDownloadConflict(const RemoteEntry &entry, const QString &localPath, bool *resume);
     void loadSavedSites();
@@ -141,4 +142,8 @@ private:
     bool m_nextDownloadShouldOpen = false;
     bool m_openDownloadedAfterTransfer = false;
     int m_activeTransferRow = -1;
+    qint64 m_activeTransferTotalBytes = -1;
+    qint64 m_lastTransferBytes = 0;
+    qint64 m_lastTransferSpeedBytes = -1;
+    QElapsedTimer m_transferSpeedTimer;
 };

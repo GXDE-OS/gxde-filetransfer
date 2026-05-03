@@ -391,14 +391,15 @@ QWidget *MainWindow::createTransferPane()
     QVBoxLayout *layout = new QVBoxLayout(pane);
     layout->setContentsMargins(8, 8, 8, 8);
 
-    m_transferTable = new QTableWidget(0, 4, pane);
-    m_transferTable->setHorizontalHeaderLabels({tr("Direction"), tr("Source"), tr("Destination"), tr("Progress")});
+    m_transferTable = new QTableWidget(0, 5, pane);
+    m_transferTable->setHorizontalHeaderLabels({tr("Direction"), tr("Source"), tr("Destination"), tr("Progress"), tr("Speed")});
     m_transferTable->horizontalHeader()->setStretchLastSection(false);
     m_transferTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     m_transferTable->setColumnWidth(0, 100);
     m_transferTable->setColumnWidth(1, 260);
     m_transferTable->setColumnWidth(2, 260);
     m_transferTable->setColumnWidth(3, 150);
+    m_transferTable->setColumnWidth(4, 120);
     m_transferTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_transferTable->setAlternatingRowColors(true);
     m_transferTable->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -1300,6 +1301,26 @@ void MainWindow::showTransferProgress(int percent)
         bar->setValue(percent);
         bar->setFormat(QStringLiteral("%p%"));
     }
+    QTableWidgetItem *speedItem = m_transferTable->item(m_activeTransferRow, 4);
+    if (!speedItem) {
+        return;
+    }
+    if (m_activeTransferTotalBytes <= 0 || !m_transferSpeedTimer.isValid()) {
+        speedItem->setText(QStringLiteral("-"));
+        return;
+    }
+
+    const qint64 currentBytes = qBound<qint64>(0, m_activeTransferTotalBytes * percent / 100, m_activeTransferTotalBytes);
+    const qint64 elapsed = m_transferSpeedTimer.elapsed();
+    if (elapsed >= 500) {
+        const qint64 deltaBytes = currentBytes - m_lastTransferBytes;
+        m_lastTransferSpeedBytes = deltaBytes > 0 ? deltaBytes * 1000 / elapsed : 0;
+        m_lastTransferBytes = currentBytes;
+        m_transferSpeedTimer.restart();
+    }
+    if (m_lastTransferSpeedBytes >= 0) {
+        speedItem->setText(tr("%1/s").arg(humanReadableSize(m_lastTransferSpeedBytes)));
+    }
 }
 
 void MainWindow::showTransferCancelled()
@@ -2006,7 +2027,7 @@ void MainWindow::startNextUpload()
 
     const QString localPath = m_pendingUploadLocalPaths.takeFirst();
     const QString remotePath = m_pendingUploadRemotePaths.takeFirst();
-    m_activeTransferRow = addTransferRow(tr("Upload"), localPath, remotePath);
+    m_activeTransferRow = addTransferRow(tr("Upload"), localPath, remotePath, QFileInfo(localPath).size());
     m_lastTransferWasUpload = true;
     m_transferClient->upload(currentConnection(), localPath, remotePath);
 }
@@ -2027,7 +2048,7 @@ void MainWindow::startNextDownload()
         startNextDownload();
         return;
     }
-    m_activeTransferRow = addTransferRow(tr("Download"), entry.path, localPath);
+    m_activeTransferRow = addTransferRow(tr("Download"), entry.path, localPath, entry.size);
     m_lastTransferWasUpload = false;
     m_transferClient->download(currentConnection(), entry.path, localPath, resume);
 }
@@ -2073,18 +2094,23 @@ void MainWindow::appendLog(const QString &message)
                            .arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss")), message));
 }
 
-int MainWindow::addTransferRow(const QString &direction, const QString &source, const QString &destination)
+int MainWindow::addTransferRow(const QString &direction, const QString &source, const QString &destination, qint64 totalBytes)
 {
     const int row = m_transferTable->rowCount();
     m_transferTable->insertRow(row);
     m_transferTable->setItem(row, 0, new QTableWidgetItem(direction));
     m_transferTable->setItem(row, 1, new QTableWidgetItem(source));
     m_transferTable->setItem(row, 2, new QTableWidgetItem(destination));
+    m_transferTable->setItem(row, 4, new QTableWidgetItem(QStringLiteral("-")));
     QProgressBar *progress = new QProgressBar(m_transferTable);
     progress->setRange(0, 0);
     progress->setFormat(tr("Starting"));
     m_transferTable->setCellWidget(row, 3, progress);
     m_transferTable->setItem(row, 3, new QTableWidgetItem(tr("Running")));
+    m_activeTransferTotalBytes = totalBytes;
+    m_lastTransferBytes = 0;
+    m_lastTransferSpeedBytes = -1;
+    m_transferSpeedTimer.restart();
     m_transferTable->scrollToBottom();
     return row;
 }
@@ -2100,6 +2126,10 @@ void MainWindow::updateFirstRunningTransfer(const QString &status)
                 bar->setRange(0, 100);
                 bar->setValue(status == tr("Done") ? 100 : bar->value());
                 bar->setFormat(status);
+            }
+            QTableWidgetItem *speedItem = m_transferTable->item(row, 4);
+            if (speedItem && status != tr("Running")) {
+                speedItem->setText(QStringLiteral("-"));
             }
             return;
         }

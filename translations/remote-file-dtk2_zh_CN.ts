@@ -458,6 +458,14 @@
         <source>Create Folder</source>
         <translation>创建文件夹</translation>
     </message>
+    <message>
+        <source>Speed</source>
+        <translation>速度</translation>
+    </message>
+    <message>
+        <source>%1/s</source>
+        <translation>%1/秒</translation>
+    </message>
 </context>
 <context>
     <name>QObject</name>

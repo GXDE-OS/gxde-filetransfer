@@ -14,6 +14,7 @@ DWIDGET_USE_NAMESPACE
 int main(int argc, char *argv[])
 {
     DApplication::setAttribute(Qt::AA_EnableHighDpiScaling, true);
+    DApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, true);
     DApplication::loadDXcbPlugin();
 
     DApplication app(argc, argv);

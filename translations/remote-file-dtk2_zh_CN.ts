@@ -271,6 +271,22 @@
         <translation>删除失败记录</translation>
     </message>
     <message>
+        <source>Delete Error Records</source>
+        <translation>删除错误记录</translation>
+    </message>
+    <message>
+        <source>Processing</source>
+        <translation>处理中</translation>
+    </message>
+    <message>
+        <source>Completed</source>
+        <translation>已完成</translation>
+    </message>
+    <message>
+        <source>Errors</source>
+        <translation>错误</translation>
+    </message>
+    <message>
         <source>Please enter a host before saving.</source>
         <translation>保存前请先输入主机。</translation>
     </message>

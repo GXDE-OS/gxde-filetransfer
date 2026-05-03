@@ -40,6 +40,7 @@
 #include <QSpinBox>
 #include <QSplitter>
 #include <QTableWidgetItem>
+#include <QTabWidget>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -392,24 +393,36 @@ QWidget *MainWindow::createTransferPane()
     QVBoxLayout *layout = new QVBoxLayout(pane);
     layout->setContentsMargins(8, 8, 8, 8);
 
-    m_transferTable = new QTableWidget(0, 5, pane);
-    m_transferTable->setHorizontalHeaderLabels({tr("Direction"), tr("Source"), tr("Destination"), tr("Progress"), tr("Speed")});
-    m_transferTable->horizontalHeader()->setStretchLastSection(false);
-    m_transferTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-    m_transferTable->setColumnWidth(0, 100);
-    m_transferTable->setColumnWidth(1, 260);
-    m_transferTable->setColumnWidth(2, 260);
-    m_transferTable->setColumnWidth(3, 150);
-    m_transferTable->setColumnWidth(4, 120);
-    m_transferTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_transferTable->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    m_transferTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_transferTable->setAlternatingRowColors(true);
-    m_transferTable->setContextMenuPolicy(Qt::CustomContextMenu);
-    polishFileTable(m_transferTable);
-    connect(m_transferTable, &QTableWidget::customContextMenuRequested, this, &MainWindow::showTransferContextMenu);
-    layout->addWidget(m_transferTable);
+    m_transferTabs = new QTabWidget(pane);
+    m_transferTable = createTransferTable(m_transferTabs);
+    m_completedTransferTable = createTransferTable(m_transferTabs);
+    m_errorTransferTable = createTransferTable(m_transferTabs);
+    m_transferTabs->addTab(m_transferTable, tr("Processing"));
+    m_transferTabs->addTab(m_completedTransferTable, tr("Completed"));
+    m_transferTabs->addTab(m_errorTransferTable, tr("Errors"));
+    layout->addWidget(m_transferTabs);
     return pane;
+}
+
+QTableWidget *MainWindow::createTransferTable(QWidget *parent)
+{
+    QTableWidget *table = new QTableWidget(0, 5, parent);
+    table->setHorizontalHeaderLabels({tr("Direction"), tr("Source"), tr("Destination"), tr("Progress"), tr("Speed")});
+    table->horizontalHeader()->setStretchLastSection(false);
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    table->setColumnWidth(0, 100);
+    table->setColumnWidth(1, 260);
+    table->setColumnWidth(2, 260);
+    table->setColumnWidth(3, 150);
+    table->setColumnWidth(4, 120);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setAlternatingRowColors(true);
+    table->setContextMenuPolicy(Qt::CustomContextMenu);
+    polishFileTable(table);
+    connect(table, &QTableWidget::customContextMenuRequested, this, &MainWindow::showTransferContextMenu);
+    return table;
 }
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
@@ -845,31 +858,6 @@ void MainWindow::cancelSelectedTransfer()
     }
 }
 
-void MainWindow::deleteSelectedTransferRecords()
-{
-    const QModelIndexList selectedRows = m_transferTable->selectionModel()->selectedRows();
-    QList<int> rows;
-    bool removesRunningTransfer = false;
-    for (const QModelIndex &index : selectedRows) {
-        const int row = index.row();
-        if (!rows.contains(row)) {
-            rows << row;
-        }
-        QTableWidgetItem *statusItem = m_transferTable->item(row, 3);
-        if (statusItem && statusItem->text() == tr("Running")) {
-            removesRunningTransfer = true;
-        }
-    }
-
-    if (rows.isEmpty()) {
-        return;
-    }
-    if (removesRunningTransfer) {
-        cancelSelectedTransfer();
-    }
-    removeTransferRows(rows);
-}
-
 void MainWindow::showLocalContextMenu(const QPoint &pos)
 {
     const QModelIndex index = m_localView->indexAt(pos);
@@ -978,41 +966,60 @@ void MainWindow::showRemoteContextMenu(const QPoint &pos)
 
 void MainWindow::showTransferContextMenu(const QPoint &pos)
 {
-    const int row = m_transferTable->rowAt(pos.y());
-    if (row >= 0 && !m_transferTable->selectionModel()->isRowSelected(row, QModelIndex())) {
-        m_transferTable->selectRow(row);
+    QTableWidget *table = qobject_cast<QTableWidget *>(sender());
+    if (!table) {
+        return;
     }
 
-    const QList<int> runningRows = transferRowsWithStatus(tr("Running"));
-    const QList<int> doneRows = transferRowsWithStatus(tr("Done"));
-    const QList<int> failedRows = transferRowsWithStatus(tr("Failed"));
-    const bool hasSelection = !m_transferTable->selectionModel()->selectedRows().isEmpty();
+    const int row = table->rowAt(pos.y());
+    if (row >= 0 && !table->selectionModel()->isRowSelected(row, QModelIndex())) {
+        table->selectRow(row);
+    }
+
+    QList<int> allRows;
+    for (int i = 0; i < table->rowCount(); ++i) {
+        allRows << i;
+    }
+    const bool hasSelection = !table->selectionModel()->selectedRows().isEmpty();
 
     QMenu menu(this);
-    QAction *cancelAction = menu.addAction(tr("Cancel Transfer"));
-    cancelAction->setEnabled(m_transferClient->isBusy());
-    menu.addSeparator();
+    QAction *cancelAction = nullptr;
+    if (table == m_transferTable) {
+        cancelAction = menu.addAction(tr("Cancel Transfer"));
+        cancelAction->setEnabled(m_transferClient->isBusy());
+        menu.addSeparator();
+    }
     QAction *deleteSelectedAction = menu.addAction(tr("Delete Selected Record"));
     deleteSelectedAction->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
     deleteSelectedAction->setEnabled(hasSelection);
-    QAction *deleteRunningAction = menu.addAction(tr("Delete Running Records"));
-    deleteRunningAction->setEnabled(!runningRows.isEmpty());
-    QAction *deleteDoneAction = menu.addAction(tr("Delete Completed Records"));
-    deleteDoneAction->setEnabled(!doneRows.isEmpty());
-    QAction *deleteFailedAction = menu.addAction(tr("Delete Failed Records"));
-    deleteFailedAction->setEnabled(!failedRows.isEmpty());
-    QAction *chosen = menu.exec(m_transferTable->viewport()->mapToGlobal(pos));
-    if (chosen == cancelAction) {
+    QAction *deleteAllAction = nullptr;
+    if (table == m_transferTable) {
+        deleteAllAction = menu.addAction(tr("Delete Running Records"));
+    } else if (table == m_completedTransferTable) {
+        deleteAllAction = menu.addAction(tr("Delete Completed Records"));
+    } else {
+        deleteAllAction = menu.addAction(tr("Delete Error Records"));
+    }
+    deleteAllAction->setEnabled(!allRows.isEmpty());
+
+    QAction *chosen = menu.exec(table->viewport()->mapToGlobal(pos));
+    if (chosen == cancelAction && cancelAction) {
         cancelSelectedTransfer();
     } else if (chosen == deleteSelectedAction) {
-        deleteSelectedTransferRecords();
-    } else if (chosen == deleteRunningAction) {
-        cancelSelectedTransfer();
-        removeTransferRows(runningRows);
-    } else if (chosen == deleteDoneAction) {
-        removeTransferRows(doneRows);
-    } else if (chosen == deleteFailedAction) {
-        removeTransferRows(failedRows);
+        QList<int> selectedRows;
+        const QModelIndexList indexes = table->selectionModel()->selectedRows();
+        for (const QModelIndex &index : indexes) {
+            selectedRows << index.row();
+        }
+        if (table == m_transferTable && !selectedRows.isEmpty()) {
+            cancelSelectedTransfer();
+        }
+        removeTransferRows(table, selectedRows);
+    } else if (chosen == deleteAllAction) {
+        if (table == m_transferTable) {
+            cancelSelectedTransfer();
+        }
+        removeTransferRows(table, allRows);
     }
 }
 
@@ -2172,6 +2179,14 @@ void MainWindow::updateFirstRunningTransfer(const QString &status)
     for (int row = 0; row < m_transferTable->rowCount(); ++row) {
         QTableWidgetItem *item = m_transferTable->item(row, 3);
         if (item && item->text() == tr("Running")) {
+            if (status == tr("Done")) {
+                moveTransferRow(m_transferTable, row, m_completedTransferTable, status);
+                return;
+            }
+            if (status != tr("Running")) {
+                moveTransferRow(m_transferTable, row, m_errorTransferTable, status);
+                return;
+            }
             item->setText(status);
             QProgressBar *bar = qobject_cast<QProgressBar *>(m_transferTable->cellWidget(row, 3));
             if (bar) {
@@ -2188,34 +2203,48 @@ void MainWindow::updateFirstRunningTransfer(const QString &status)
     }
 }
 
-QList<int> MainWindow::transferRowsWithStatus(const QString &status) const
-{
-    QList<int> rows;
-    for (int row = 0; row < m_transferTable->rowCount(); ++row) {
-        QTableWidgetItem *statusItem = m_transferTable->item(row, 3);
-        if (statusItem && statusItem->text() == status) {
-            rows << row;
-        }
-    }
-    return rows;
-}
-
-void MainWindow::removeTransferRows(const QList<int> &rows)
+void MainWindow::removeTransferRows(QTableWidget *table, const QList<int> &rows)
 {
     QList<int> sortedRows = rows;
     std::sort(sortedRows.begin(), sortedRows.end(), std::greater<int>());
 
     for (const int row : sortedRows) {
-        if (row < 0 || row >= m_transferTable->rowCount()) {
+        if (row < 0 || row >= table->rowCount()) {
             continue;
         }
-        if (row == m_activeTransferRow) {
+        if (table == m_transferTable && row == m_activeTransferRow) {
             m_activeTransferRow = -1;
-        } else if (m_activeTransferRow > row) {
+        } else if (table == m_transferTable && m_activeTransferRow > row) {
             --m_activeTransferRow;
         }
-        m_transferTable->removeRow(row);
+        table->removeRow(row);
     }
+}
+
+void MainWindow::moveTransferRow(QTableWidget *sourceTable, int sourceRow, QTableWidget *targetTable, const QString &status)
+{
+    if (sourceRow < 0 || sourceRow >= sourceTable->rowCount()) {
+        return;
+    }
+
+    const int targetRow = targetTable->rowCount();
+    targetTable->insertRow(targetRow);
+    for (int column = 0; column < sourceTable->columnCount(); ++column) {
+        QTableWidgetItem *sourceItem = sourceTable->item(sourceRow, column);
+        QString text = sourceItem ? sourceItem->text() : QString();
+        if (column == 3) {
+            text = status;
+        } else if (column == 4 && status != tr("Running")) {
+            text = QStringLiteral("-");
+        }
+        targetTable->setItem(targetRow, column, new QTableWidgetItem(text));
+    }
+
+    sourceTable->removeRow(sourceRow);
+    if (sourceTable == m_transferTable) {
+        m_activeTransferRow = -1;
+    }
+    targetTable->scrollToBottom();
 }
 
 bool MainWindow::confirmDownloadConflict(const RemoteEntry &entry, const QString &localPath, bool *resume)

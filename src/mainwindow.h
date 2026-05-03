@@ -15,6 +15,7 @@
 
 class QComboBox;
 class QSpinBox;
+class QTabWidget;
 
 class MainWindow : public Dtk::Widget::DMainWindow
 {
@@ -37,7 +38,6 @@ private slots:
     void deleteSelectedRemote();
     void openLocalFile();
     void cancelSelectedTransfer();
-    void deleteSelectedTransferRecords();
     void showLocalContextMenu(const QPoint &pos);
     void showRemoteContextMenu(const QPoint &pos);
     void showTransferContextMenu(const QPoint &pos);
@@ -61,6 +61,7 @@ private:
     QWidget *createLocalPane();
     QWidget *createRemotePane();
     QWidget *createTransferPane();
+    QTableWidget *createTransferTable(QWidget *parent);
     bool eventFilter(QObject *watched, QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     RemoteConnection currentConnection() const;
@@ -98,8 +99,8 @@ private:
     void appendLog(const QString &message);
     int addTransferRow(const QString &direction, const QString &source, const QString &destination, qint64 totalBytes = -1);
     void updateFirstRunningTransfer(const QString &status);
-    QList<int> transferRowsWithStatus(const QString &status) const;
-    void removeTransferRows(const QList<int> &rows);
+    void removeTransferRows(QTableWidget *table, const QList<int> &rows);
+    void moveTransferRow(QTableWidget *sourceTable, int sourceRow, QTableWidget *targetTable, const QString &status);
     bool confirmDownloadConflict(const RemoteEntry &entry, const QString &localPath, bool *resume);
     void loadSavedSites();
     void persistSavedSites();
@@ -126,6 +127,9 @@ private:
     QLabel *m_localStatusLabel = nullptr;
     QTableWidget *m_remoteTable = nullptr;
     QTableWidget *m_transferTable = nullptr;
+    QTableWidget *m_completedTransferTable = nullptr;
+    QTableWidget *m_errorTransferTable = nullptr;
+    QTabWidget *m_transferTabs = nullptr;
     QPlainTextEdit *m_log = nullptr;
     QTableWidget *m_localView = nullptr;
     RemoteClient *m_client = nullptr;

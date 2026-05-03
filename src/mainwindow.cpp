@@ -205,7 +205,7 @@ QWidget *MainWindow::createConnectionBar()
     m_portSpin = new QSpinBox(bar);
     m_portSpin->setRange(0, 65535);
     m_portSpin->setSpecialValueText(tr("Auto"));
-    m_portSpin->setMinimumWidth(160);
+    m_portSpin->setMinimumWidth(120);
     m_userEdit = new QLineEdit(bar);
     m_userEdit->setPlaceholderText(tr("User"));
     m_passwordEdit = new QLineEdit(bar);

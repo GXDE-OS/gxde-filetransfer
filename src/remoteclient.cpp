@@ -361,14 +361,18 @@ void RemoteClient::readTransferProgress()
     }
 
     const QStringList lines = text.split(QRegularExpression(QStringLiteral("[\\r\\n]+")), Qt::SkipEmptyParts);
-    const QRegularExpression progressLine(QStringLiteral("^\\s*(\\d{1,3})\\s+\\S+\\s+\\d{1,3}\\s+\\S+\\s+\\d{1,3}\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+(\\S+)\\s*$"));
     for (auto it = lines.crbegin(); it != lines.crend(); ++it) {
-        const QRegularExpressionMatch match = progressLine.match(*it);
-        if (!match.hasMatch()) {
+        const QStringList columns = it->simplified().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        if (columns.size() < 12) {
             continue;
         }
-        emit transferProgress(qBound(0, match.captured(1).toInt(), 100));
-        const QString speed = curlSpeedText(match.captured(2));
+        bool ok = false;
+        const int percent = columns.first().toInt(&ok);
+        if (!ok) {
+            continue;
+        }
+        emit transferProgress(qBound(0, percent, 100));
+        const QString speed = curlSpeedText(columns.last());
         if (!speed.isEmpty()) {
             emit transferSpeed(speed);
         }
@@ -470,6 +474,9 @@ QString RemoteClient::curlSpeedText(const QString &speed) const
     const QString value = speed.trimmed();
     if (value.isEmpty() || value == QLatin1String("0") || value == QLatin1String("-")) {
         return QString();
+    }
+    if (value.at(value.size() - 1).isDigit()) {
+        return tr("%1 B/s").arg(value);
     }
     return tr("%1/s").arg(value);
 }

@@ -996,7 +996,7 @@ void MainWindow::showRemoteContextMenu(const QPoint &pos)
         openAction->setEnabled(entry.directory && !m_client->isBusy());
     }
     if (downloadAction) {
-        downloadAction->setEnabled(!m_transferClient->isBusy());
+        downloadAction->setEnabled(true);
     }
     if (calculateSizeAction) {
         calculateSizeAction->setEnabled(!m_client->isBusy());

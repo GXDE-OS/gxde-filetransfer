@@ -100,10 +100,13 @@ private:
     void setTransferBusy(bool busy);
     void appendLog(const QString &message);
     void showCopyableWarning(const QString &title, const QString &message, const QString &details = QString());
-    int addTransferRow(const QString &direction, const QString &source, const QString &destination, qint64 totalBytes = -1);
+    int addTransferRow(const QString &direction, const QString &source, const QString &destination, qint64 totalBytes = -1, bool active = true);
+    void startTransferRow(int row, qint64 totalBytes);
     void updateFirstRunningTransfer(const QString &status);
     void removeTransferRows(QTableWidget *table, const QList<int> &rows);
     void moveTransferRow(QTableWidget *sourceTable, int sourceRow, QTableWidget *targetTable, const QString &status);
+    void movePendingDownloadRowsToError(const QString &status);
+    void adjustPendingDownloadRowsAfterRemoved(int removedRow);
     bool confirmDownloadConflict(const RemoteEntry &entry, const QString &localPath, bool *resume);
     void loadSavedSites();
     void persistSavedSites();
@@ -147,6 +150,7 @@ private:
     QStringList m_pendingUploadRemotePaths;
     QVector<RemoteEntry> m_pendingDownloads;
     QStringList m_pendingDownloadLocalPaths;
+    QVector<int> m_pendingDownloadRows;
     QVector<RemoteEntry> m_pendingRemoteDeletes;
     QVector<RemoteEntry> m_pendingRemoteMoves;
     QStringList m_pendingRemoteMoveDestinations;

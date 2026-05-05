@@ -1455,6 +1455,8 @@ void MainWindow::showTransferCancelled()
     m_pendingUploadRemotePaths.clear();
     m_pendingDownloads.clear();
     m_pendingDownloadLocalPaths.clear();
+    movePendingDownloadRowsToError(tr("Cancelled"));
+    m_pendingDownloadRows.clear();
     m_openDownloadedAfterTransfer = false;
     m_nextDownloadShouldOpen = false;
 }
@@ -1491,6 +1493,8 @@ void MainWindow::showTransferError(const QString &message, const QString &detail
     m_pendingUploadRemotePaths.clear();
     m_pendingDownloads.clear();
     m_pendingDownloadLocalPaths.clear();
+    movePendingDownloadRowsToError(tr("Failed"));
+    m_pendingDownloadRows.clear();
     m_openDownloadedAfterTransfer = false;
     m_nextDownloadShouldOpen = false;
     const QString fullMessage = details.isEmpty() ? message : QStringLiteral("%1\n%2").arg(message, details);
@@ -1773,6 +1777,7 @@ void MainWindow::queueDownloads(const QVector<RemoteEntry> &entries, const QStri
         }
         m_pendingDownloads << entry;
         m_pendingDownloadLocalPaths << targetDir.filePath(entry.name);
+        m_pendingDownloadRows << addTransferRow(tr("Download"), entry.path, targetDir.filePath(entry.name), entry.size, false);
     }
     startNextDownload();
 }
@@ -1813,6 +1818,7 @@ bool MainWindow::collectRemoteDownloads(const RemoteEntry &entry, const QString 
         } else {
             m_pendingDownloads << child;
             m_pendingDownloadLocalPaths << localDir.filePath(child.name);
+            m_pendingDownloadRows << addTransferRow(tr("Download"), child.path, localDir.filePath(child.name), child.size, false);
         }
     }
     return true;
@@ -2174,15 +2180,24 @@ void MainWindow::startNextDownload()
 
     const RemoteEntry entry = m_pendingDownloads.takeFirst();
     const QString localPath = m_pendingDownloadLocalPaths.takeFirst();
+    const int transferRow = m_pendingDownloadRows.isEmpty() ? -1 : m_pendingDownloadRows.takeFirst();
     bool resume = false;
     if (!confirmDownloadConflict(entry, localPath, &resume)) {
+        if (transferRow >= 0) {
+            moveTransferRow(m_transferTable, transferRow, m_errorTransferTable, tr("Cancelled"));
+        }
         if (m_pendingDownloads.isEmpty()) {
             m_openDownloadedAfterTransfer = false;
         }
         startNextDownload();
         return;
     }
-    m_activeTransferRow = addTransferRow(tr("Download"), entry.path, localPath, entry.size);
+    if (transferRow >= 0) {
+        m_activeTransferRow = transferRow;
+        startTransferRow(m_activeTransferRow, entry.size);
+    } else {
+        m_activeTransferRow = addTransferRow(tr("Download"), entry.path, localPath, entry.size);
+    }
     m_lastTransferWasUpload = false;
     m_transferClient->download(currentConnection(), entry.path, localPath, resume);
 }
@@ -2242,7 +2257,7 @@ void MainWindow::showCopyableWarning(const QString &title, const QString &messag
     box.exec();
 }
 
-int MainWindow::addTransferRow(const QString &direction, const QString &source, const QString &destination, qint64 totalBytes)
+int MainWindow::addTransferRow(const QString &direction, const QString &source, const QString &destination, qint64 totalBytes, bool active)
 {
     const int row = m_transferTable->rowCount();
     m_transferTable->insertRow(row);
@@ -2251,16 +2266,43 @@ int MainWindow::addTransferRow(const QString &direction, const QString &source, 
     m_transferTable->setItem(row, 2, new QTableWidgetItem(destination));
     m_transferTable->setItem(row, 4, new QTableWidgetItem(QStringLiteral("-")));
     QProgressBar *progress = new QProgressBar(m_transferTable);
-    progress->setRange(0, 0);
-    progress->setFormat(tr("Starting"));
+    progress->setRange(0, active ? 0 : 100);
+    progress->setValue(0);
+    progress->setFormat(active ? tr("Starting") : tr("Queued"));
     m_transferTable->setCellWidget(row, 3, progress);
-    m_transferTable->setItem(row, 3, new QTableWidgetItem(tr("Running")));
+    m_transferTable->setItem(row, 3, new QTableWidgetItem(active ? tr("Running") : tr("Queued")));
+    if (active) {
+        m_activeTransferTotalBytes = totalBytes;
+        m_lastTransferBytes = 0;
+        m_lastTransferSpeedBytes = -1;
+        m_transferSpeedTimer.restart();
+    }
+    m_transferTable->scrollToBottom();
+    return row;
+}
+
+void MainWindow::startTransferRow(int row, qint64 totalBytes)
+{
+    if (row < 0 || row >= m_transferTable->rowCount()) {
+        return;
+    }
+    QTableWidgetItem *statusItem = m_transferTable->item(row, 3);
+    if (statusItem) {
+        statusItem->setText(tr("Running"));
+    }
+    QProgressBar *progress = qobject_cast<QProgressBar *>(m_transferTable->cellWidget(row, 3));
+    if (progress) {
+        progress->setRange(0, 0);
+        progress->setFormat(tr("Starting"));
+    }
+    QTableWidgetItem *speedItem = m_transferTable->item(row, 4);
+    if (speedItem) {
+        speedItem->setText(QStringLiteral("-"));
+    }
     m_activeTransferTotalBytes = totalBytes;
     m_lastTransferBytes = 0;
     m_lastTransferSpeedBytes = -1;
     m_transferSpeedTimer.restart();
-    m_transferTable->scrollToBottom();
-    return row;
 }
 
 void MainWindow::updateFirstRunningTransfer(const QString &status)
@@ -2301,12 +2343,27 @@ void MainWindow::removeTransferRows(QTableWidget *table, const QList<int> &rows)
         if (row < 0 || row >= table->rowCount()) {
             continue;
         }
+        if (table == m_transferTable) {
+            const int pendingIndex = m_pendingDownloadRows.indexOf(row);
+            if (pendingIndex >= 0) {
+                m_pendingDownloadRows.removeAt(pendingIndex);
+                if (pendingIndex < m_pendingDownloads.size()) {
+                    m_pendingDownloads.removeAt(pendingIndex);
+                }
+                if (pendingIndex < m_pendingDownloadLocalPaths.size()) {
+                    m_pendingDownloadLocalPaths.removeAt(pendingIndex);
+                }
+            }
+        }
         if (table == m_transferTable && row == m_activeTransferRow) {
             m_activeTransferRow = -1;
         } else if (table == m_transferTable && m_activeTransferRow > row) {
             --m_activeTransferRow;
         }
         table->removeRow(row);
+        if (table == m_transferTable) {
+            adjustPendingDownloadRowsAfterRemoved(row);
+        }
     }
 }
 
@@ -2332,8 +2389,27 @@ void MainWindow::moveTransferRow(QTableWidget *sourceTable, int sourceRow, QTabl
     sourceTable->removeRow(sourceRow);
     if (sourceTable == m_transferTable) {
         m_activeTransferRow = -1;
+        adjustPendingDownloadRowsAfterRemoved(sourceRow);
     }
     targetTable->scrollToBottom();
+}
+
+void MainWindow::movePendingDownloadRowsToError(const QString &status)
+{
+    QVector<int> rows = m_pendingDownloadRows;
+    std::sort(rows.begin(), rows.end(), std::greater<int>());
+    for (const int row : rows) {
+        moveTransferRow(m_transferTable, row, m_errorTransferTable, status);
+    }
+}
+
+void MainWindow::adjustPendingDownloadRowsAfterRemoved(int removedRow)
+{
+    for (int &row : m_pendingDownloadRows) {
+        if (row > removedRow) {
+            --row;
+        }
+    }
 }
 
 bool MainWindow::confirmDownloadConflict(const RemoteEntry &entry, const QString &localPath, bool *resume)

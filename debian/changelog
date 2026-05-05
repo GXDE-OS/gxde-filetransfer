@@ -1,3 +1,9 @@
+gxde-filetransfer (1.0.1) unstable; urgency=medium
+
+  * Allow upload tasks to queue while transfers are running.
+
+ -- GXDE Team <team@gxde.org>  Tue, 05 May 2026 00:00:00 +0000
+
 gxde-filetransfer (1.0.0) unstable; urgency=medium
 
   * Add local refresh controls and refresh file lists during transfer changes.

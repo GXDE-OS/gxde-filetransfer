@@ -44,6 +44,7 @@ signals:
     void started(const QString &url);
     void listed(const QString &path, const QVector<RemoteEntry> &entries);
     void transferProgress(int percent);
+    void transferSpeed(const QString &speed);
     void transferFinished(const QString &source, const QString &destination);
     void removeFinished(const QString &path);
     void moveFinished(const QString &source, const QString &destination);
@@ -77,6 +78,7 @@ private:
     QString authenticationModeName() const;
     QString sanitizedArguments(const QStringList &args) const;
     QString operationDebugDetails(int exitCode, QProcess::ExitStatus exitStatus, const QByteArray &errorOutput) const;
+    QString curlSpeedText(const QString &speed) const;
     bool isWebDavConnection(const RemoteConnection &connection) const;
     void addDiagnosticsArguments(QStringList *args) const;
     void addLocationArguments(QStringList *args, const RemoteConnection &connection) const;

@@ -177,7 +177,6 @@ void RemoteClient::startCurrentOperation()
         args << QStringLiteral("--show-error")
              << QStringLiteral("--fail")
              << QStringLiteral("--globoff")
-             << QStringLiteral("--progress-bar")
              << QStringLiteral("--ftp-create-dirs")
              << QStringLiteral("--connect-timeout") << QStringLiteral("15")
              << QStringLiteral("--max-time") << QStringLiteral("0");
@@ -211,7 +210,6 @@ void RemoteClient::startCurrentOperation()
         args << QStringLiteral("--show-error")
              << QStringLiteral("--fail")
              << QStringLiteral("--globoff")
-             << QStringLiteral("--progress-bar")
              << QStringLiteral("--ftp-create-dirs")
              << QStringLiteral("--connect-timeout") << QStringLiteral("15")
              << QStringLiteral("--max-time") << QStringLiteral("0");
@@ -361,6 +359,21 @@ void RemoteClient::readTransferProgress()
     if (lastPercent >= 0) {
         emit transferProgress(lastPercent);
     }
+
+    const QStringList lines = text.split(QRegularExpression(QStringLiteral("[\\r\\n]+")), Qt::SkipEmptyParts);
+    const QRegularExpression progressLine(QStringLiteral("^\\s*(\\d{1,3})\\s+\\S+\\s+\\d{1,3}\\s+\\S+\\s+\\d{1,3}\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+(\\S+)\\s*$"));
+    for (auto it = lines.crbegin(); it != lines.crend(); ++it) {
+        const QRegularExpressionMatch match = progressLine.match(*it);
+        if (!match.hasMatch()) {
+            continue;
+        }
+        emit transferProgress(qBound(0, match.captured(1).toInt(), 100));
+        const QString speed = curlSpeedText(match.captured(2));
+        if (!speed.isEmpty()) {
+            emit transferSpeed(speed);
+        }
+        break;
+    }
 }
 
 QString RemoteClient::buildUrl(const RemoteConnection &connection, const QString &path) const
@@ -450,6 +463,15 @@ QString RemoteClient::operationDebugDetails(int exitCode, QProcess::ExitStatus e
         details << tr("Curl stderr:") << stderrText;
     }
     return details.join(QLatin1Char('\n'));
+}
+
+QString RemoteClient::curlSpeedText(const QString &speed) const
+{
+    const QString value = speed.trimmed();
+    if (value.isEmpty() || value == QLatin1String("0") || value == QLatin1String("-")) {
+        return QString();
+    }
+    return tr("%1/s").arg(value);
 }
 
 bool RemoteClient::isWebDavConnection(const RemoteConnection &connection) const

@@ -240,6 +240,7 @@ MainWindow::MainWindow(QWidget *parent)
         appendLog(tr("Transfer started: %1").arg(url));
     });
     connect(m_transferClient, &RemoteClient::transferProgress, this, &MainWindow::showTransferProgress);
+    connect(m_transferClient, &RemoteClient::transferSpeed, this, &MainWindow::showTransferSpeed);
     connect(m_transferClient, &RemoteClient::transferFinished, this, &MainWindow::showTransferFinished);
     connect(m_transferClient, &RemoteClient::cancelled, this, &MainWindow::showTransferCancelled);
     connect(m_transferClient, &RemoteClient::failed, this, &MainWindow::showTransferError);
@@ -1096,10 +1097,13 @@ void MainWindow::showSavedSitesDialog()
 
     QListWidget *list = new QListWidget(listGroup);
     list->setMinimumWidth(240);
+    list->setSpacing(4);
+    list->setUniformItemSizes(true);
+    list->setGridSize(QSize(220, 44));
     list->setAlternatingRowColors(true);
     list->setStyleSheet(QStringLiteral(
         "QListWidget { border: 1px solid palette(mid); border-radius: 8px; background: palette(base); padding: 4px; }"
-        "QListWidget::item { min-height: 34px; border-radius: 6px; padding: 5px 8px; }"
+        "QListWidget::item { height: 40px; border-radius: 6px; padding: 5px 8px; }"
         "QListWidget::item:selected { background: palette(highlight); color: palette(highlighted-text); }"
         "QListWidget::item:disabled { color: palette(mid); }"));
     listLayout->addWidget(list);
@@ -1161,6 +1165,10 @@ void MainWindow::showSavedSitesDialog()
         return 80;
     };
 
+    auto defaultPath = [](const QString &protocol) {
+        return protocol.toLower() == QLatin1String("sftp") ? QStringLiteral("~") : QStringLiteral("/");
+    };
+
     auto clearForm = [=]() {
         list->clearSelection();
         list->setCurrentRow(-1);
@@ -1169,7 +1177,7 @@ void MainWindow::showSavedSitesDialog()
         portSpin->setValue(defaultPort(protocolCombo->currentText()));
         userEdit->clear();
         passwordEdit->clear();
-        pathEdit->setText(QStringLiteral("/"));
+        pathEdit->setText(defaultPath(protocolCombo->currentText()));
         loadButton->setEnabled(false);
         deleteButton->setEnabled(false);
     };
@@ -1181,7 +1189,7 @@ void MainWindow::showSavedSitesDialog()
         connection.port = portSpin->value();
         connection.username = userEdit->text();
         connection.password = passwordEdit->text();
-        connection.path = pathEdit->text().trimmed().isEmpty() ? QStringLiteral("/") : pathEdit->text().trimmed();
+        connection.path = pathEdit->text().trimmed().isEmpty() ? defaultPath(connection.protocol) : pathEdit->text().trimmed();
         return connection;
     };
 
@@ -1190,11 +1198,13 @@ void MainWindow::showSavedSitesDialog()
         for (int i = 0; i < m_savedSites.size(); ++i) {
             QListWidgetItem *item = new QListWidgetItem(QIcon::fromTheme(QStringLiteral("network-server")), siteDisplayName(m_savedSites.at(i)), list);
             item->setData(Qt::UserRole, i);
+            item->setSizeHint(QSize(220, 44));
             item->setToolTip(m_savedSites.at(i).path);
         }
         if (list->count() == 0) {
             QListWidgetItem *empty = new QListWidgetItem(QIcon::fromTheme(QStringLiteral("list-add")), tr("No saved connections yet"), list);
             empty->setData(Qt::UserRole, -1);
+            empty->setSizeHint(QSize(220, 44));
             empty->setFlags(Qt::NoItemFlags);
             empty->setToolTip(tr("Click New to add a saved connection."));
         }
@@ -1221,7 +1231,11 @@ void MainWindow::showSavedSitesDialog()
     };
 
     connect(protocolCombo, &QComboBox::currentTextChanged, &dialog, [=](const QString &protocol) {
+        const QString oldDefaultPath = protocol.toLower() == QLatin1String("sftp") ? QStringLiteral("/") : QStringLiteral("~");
         portSpin->setValue(defaultPort(protocol));
+        if (pathEdit->text().trimmed().isEmpty() || pathEdit->text().trimmed() == oldDefaultPath) {
+            pathEdit->setText(defaultPath(protocol));
+        }
     });
     connect(list, &QListWidget::currentRowChanged, &dialog, updateDetails);
     connect(newButton, &QPushButton::clicked, &dialog, clearForm);
@@ -1413,25 +1427,16 @@ void MainWindow::showTransferProgress(int percent)
         bar->setValue(percent);
         bar->setFormat(QStringLiteral("%p%"));
     }
-    QTableWidgetItem *speedItem = m_transferTable->item(m_activeTransferRow, 4);
-    if (!speedItem) {
-        return;
-    }
-    if (m_activeTransferTotalBytes <= 0 || !m_transferSpeedTimer.isValid()) {
-        speedItem->setText(QStringLiteral("-"));
-        return;
-    }
+}
 
-    const qint64 currentBytes = qBound<qint64>(0, m_activeTransferTotalBytes * percent / 100, m_activeTransferTotalBytes);
-    const qint64 elapsed = m_transferSpeedTimer.elapsed();
-    if (elapsed >= 500) {
-        const qint64 deltaBytes = currentBytes - m_lastTransferBytes;
-        m_lastTransferSpeedBytes = deltaBytes > 0 ? deltaBytes * 1000 / elapsed : 0;
-        m_lastTransferBytes = currentBytes;
-        m_transferSpeedTimer.restart();
+void MainWindow::showTransferSpeed(const QString &speed)
+{
+    if (m_activeTransferRow < 0) {
+        return;
     }
-    if (m_lastTransferSpeedBytes >= 0) {
-        speedItem->setText(tr("%1/s").arg(humanReadableSize(m_lastTransferSpeedBytes)));
+    QTableWidgetItem *speedItem = m_transferTable->item(m_activeTransferRow, 4);
+    if (speedItem) {
+        speedItem->setText(speed);
     }
 }
 
@@ -1509,6 +1514,17 @@ void MainWindow::updateDefaultPort()
         m_portSpin->setValue(443);
     } else {
         m_portSpin->setValue(80);
+    }
+
+    const QString path = m_remotePathEdit->text().trimmed();
+    if (protocol == QLatin1String("sftp")) {
+        if (path.isEmpty() || path == QLatin1String("/")) {
+            m_remotePathEdit->setText(QStringLiteral("~"));
+        }
+    } else if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
+        if (path.isEmpty() || path == QLatin1String("~")) {
+            m_remotePathEdit->setText(QStringLiteral("/"));
+        }
     }
 }
 

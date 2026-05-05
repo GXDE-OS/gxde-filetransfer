@@ -48,6 +48,7 @@ private slots:
     void showEntries(const QString &path, const QVector<RemoteEntry> &entries);
     void showTransferFinished(const QString &source, const QString &destination);
     void showTransferProgress(int percent);
+    void showTransferSpeed(const QString &speed);
     void showTransferCancelled();
     void showRemoteRemoved(const QString &path);
     void showRemoteMoved(const QString &source, const QString &destination);

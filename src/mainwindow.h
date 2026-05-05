@@ -98,6 +98,7 @@ private:
     void setBrowsingBusy(bool busy);
     void setTransferBusy(bool busy);
     void appendLog(const QString &message);
+    void showCopyableWarning(const QString &title, const QString &message, const QString &details = QString());
     int addTransferRow(const QString &direction, const QString &source, const QString &destination, qint64 totalBytes = -1);
     void updateFirstRunningTransfer(const QString &status);
     void removeTransferRows(QTableWidget *table, const QList<int> &rows);

@@ -1484,7 +1484,7 @@ void MainWindow::showTransferError(const QString &message, const QString &detail
     m_nextDownloadShouldOpen = false;
     const QString fullMessage = details.isEmpty() ? message : QStringLiteral("%1\n%2").arg(message, details);
     appendLog(fullMessage);
-    QMessageBox::warning(this, tr("Transfer error"), fullMessage);
+    showCopyableWarning(tr("Transfer error"), message, details);
 }
 
 void MainWindow::showError(const QString &message, const QString &details)
@@ -1495,7 +1495,7 @@ void MainWindow::showError(const QString &message, const QString &details)
     const QString fullMessage = details.isEmpty() ? message : QStringLiteral("%1\n%2").arg(message, details);
     m_remoteStatusLabel->setText(message);
     appendLog(fullMessage);
-    QMessageBox::warning(this, tr("Remote error"), fullMessage);
+    showCopyableWarning(tr("Remote error"), message, details);
 }
 
 void MainWindow::updateDefaultPort()
@@ -2204,6 +2204,20 @@ void MainWindow::appendLog(const QString &message)
 {
     m_log->appendPlainText(QStringLiteral("[%1] %2")
                            .arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss")), message));
+}
+
+void MainWindow::showCopyableWarning(const QString &title, const QString &message, const QString &details)
+{
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Warning);
+    box.setWindowTitle(title);
+    box.setText(message);
+    box.setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
+    if (!details.isEmpty()) {
+        box.setDetailedText(details);
+    }
+    box.addButton(QMessageBox::Ok);
+    box.exec();
 }
 
 int MainWindow::addTransferRow(const QString &direction, const QString &source, const QString &destination, qint64 totalBytes)

@@ -72,15 +72,14 @@ void RemoteClient::download(const RemoteConnection &connection, const QString &r
     m_process->setProgram(QStringLiteral("curl"));
     QStringList args;
     args << QStringLiteral("--show-error")
+         << QStringLiteral("--fail")
          << QStringLiteral("--globoff")
          << QStringLiteral("--progress-bar")
          << QStringLiteral("--ftp-create-dirs")
          << QStringLiteral("--location")
          << QStringLiteral("--connect-timeout") << QStringLiteral("15")
          << QStringLiteral("--max-time") << QStringLiteral("0");
-    if (!connection.username.isEmpty()) {
-        args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
-    }
+    addAuthenticationArguments(&args, connection);
     if (resume) {
         args << QStringLiteral("--continue-at") << QStringLiteral("-");
     }
@@ -127,12 +126,11 @@ void RemoteClient::makeDirectory(const RemoteConnection &connection, const QStri
     QStringList args;
     args << QStringLiteral("--silent")
          << QStringLiteral("--show-error")
+         << QStringLiteral("--fail")
          << QStringLiteral("--globoff")
          << QStringLiteral("--connect-timeout") << QStringLiteral("15")
          << QStringLiteral("--max-time") << QStringLiteral("60");
-    if (!connection.username.isEmpty()) {
-        args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
-    }
+    addAuthenticationArguments(&args, connection);
 
     const QString protocol = connection.protocol.toLower();
     if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
@@ -181,15 +179,14 @@ void RemoteClient::upload(const RemoteConnection &connection, const QString &loc
     m_process->setProgram(QStringLiteral("curl"));
     QStringList args;
     args << QStringLiteral("--show-error")
+         << QStringLiteral("--fail")
          << QStringLiteral("--globoff")
          << QStringLiteral("--progress-bar")
          << QStringLiteral("--ftp-create-dirs")
          << QStringLiteral("--location")
          << QStringLiteral("--connect-timeout") << QStringLiteral("15")
          << QStringLiteral("--max-time") << QStringLiteral("0");
-    if (!connection.username.isEmpty()) {
-        args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
-    }
+    addAuthenticationArguments(&args, connection);
     args << QStringLiteral("--upload-file") << localPath << m_currentUrl;
     m_process->setArguments(args);
     m_process->setProcessChannelMode(QProcess::SeparateChannels);
@@ -228,12 +225,11 @@ void RemoteClient::remove(const RemoteConnection &connection, const QString &rem
     QStringList args;
     args << QStringLiteral("--silent")
          << QStringLiteral("--show-error")
+         << QStringLiteral("--fail")
          << QStringLiteral("--globoff")
          << QStringLiteral("--connect-timeout") << QStringLiteral("15")
          << QStringLiteral("--max-time") << QStringLiteral("60");
-    if (!connection.username.isEmpty()) {
-        args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
-    }
+    addAuthenticationArguments(&args, connection);
 
     const QString protocol = connection.protocol.toLower();
     if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
@@ -276,12 +272,11 @@ void RemoteClient::move(const RemoteConnection &connection, const QString &remot
     QStringList args;
     args << QStringLiteral("--silent")
          << QStringLiteral("--show-error")
+         << QStringLiteral("--fail")
          << QStringLiteral("--globoff")
          << QStringLiteral("--connect-timeout") << QStringLiteral("15")
          << QStringLiteral("--max-time") << QStringLiteral("60");
-    if (!connection.username.isEmpty()) {
-        args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
-    }
+    addAuthenticationArguments(&args, connection);
 
     const QString protocol = connection.protocol.toLower();
     if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
@@ -442,19 +437,31 @@ QString RemoteClient::joinPath(const QString &basePath, const QString &name) con
     return normalizePath(base + name);
 }
 
+void RemoteClient::addAuthenticationArguments(QStringList *args, const RemoteConnection &connection) const
+{
+    if (connection.username.isEmpty()) {
+        return;
+    }
+
+    const QString protocol = connection.protocol.toLower();
+    if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
+        *args << QStringLiteral("--anyauth");
+    }
+    *args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
+}
+
 QStringList RemoteClient::curlArguments(const RemoteConnection &connection, const QString &url) const
 {
     QStringList args;
     args << QStringLiteral("--silent")
          << QStringLiteral("--show-error")
+         << QStringLiteral("--fail")
          << QStringLiteral("--globoff")
          << QStringLiteral("--location")
          << QStringLiteral("--connect-timeout") << QStringLiteral("15")
          << QStringLiteral("--max-time") << QStringLiteral("60");
 
-    if (!connection.username.isEmpty()) {
-        args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
-    }
+    addAuthenticationArguments(&args, connection);
 
     const QString protocol = connection.protocol.toLower();
     if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {

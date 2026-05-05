@@ -23,12 +23,15 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QHash>
 #include <QIcon>
 #include <QKeyEvent>
 #include <QListWidget>
 #include <QMenu>
 #include <QMimeData>
 #include <QMessageBox>
+#include <QMimeDatabase>
+#include <QMimeType>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
@@ -137,6 +140,60 @@ QString protocolDisplayName(const QString &protocol)
         return QStringLiteral("WebDAVS");
     }
     return normalized.toUpper();
+}
+
+QIcon themedIcon(const QString &iconName, const QString &fallbackName = QStringLiteral("text-x-generic"))
+{
+    return QIcon::fromTheme(iconName, QIcon::fromTheme(fallbackName));
+}
+
+QIcon fileIcon(const QString &fileName, bool directory)
+{
+    if (directory) {
+        return themedIcon(QStringLiteral("folder"), QStringLiteral("inode-directory"));
+    }
+
+    static const QHash<QString, QString> extensionIcons = {
+        {QStringLiteral("jpg"), QStringLiteral("image-x-generic")}, {QStringLiteral("jpeg"), QStringLiteral("image-x-generic")},
+        {QStringLiteral("png"), QStringLiteral("image-x-generic")}, {QStringLiteral("gif"), QStringLiteral("image-x-generic")},
+        {QStringLiteral("bmp"), QStringLiteral("image-x-generic")}, {QStringLiteral("webp"), QStringLiteral("image-x-generic")},
+        {QStringLiteral("svg"), QStringLiteral("image-x-generic")}, {QStringLiteral("ico"), QStringLiteral("image-x-generic")},
+        {QStringLiteral("mp4"), QStringLiteral("video-x-generic")}, {QStringLiteral("mkv"), QStringLiteral("video-x-generic")},
+        {QStringLiteral("avi"), QStringLiteral("video-x-generic")}, {QStringLiteral("mov"), QStringLiteral("video-x-generic")},
+        {QStringLiteral("wmv"), QStringLiteral("video-x-generic")}, {QStringLiteral("flv"), QStringLiteral("video-x-generic")},
+        {QStringLiteral("webm"), QStringLiteral("video-x-generic")}, {QStringLiteral("mp3"), QStringLiteral("audio-x-generic")},
+        {QStringLiteral("flac"), QStringLiteral("audio-x-generic")}, {QStringLiteral("wav"), QStringLiteral("audio-x-generic")},
+        {QStringLiteral("ogg"), QStringLiteral("audio-x-generic")}, {QStringLiteral("m4a"), QStringLiteral("audio-x-generic")},
+        {QStringLiteral("zip"), QStringLiteral("package-x-generic")}, {QStringLiteral("rar"), QStringLiteral("package-x-generic")},
+        {QStringLiteral("7z"), QStringLiteral("package-x-generic")}, {QStringLiteral("tar"), QStringLiteral("package-x-generic")},
+        {QStringLiteral("gz"), QStringLiteral("package-x-generic")}, {QStringLiteral("bz2"), QStringLiteral("package-x-generic")},
+        {QStringLiteral("xz"), QStringLiteral("package-x-generic")}, {QStringLiteral("deb"), QStringLiteral("package-x-generic")},
+        {QStringLiteral("rpm"), QStringLiteral("package-x-generic")}, {QStringLiteral("pdf"), QStringLiteral("application-pdf")},
+        {QStringLiteral("doc"), QStringLiteral("x-office-document")}, {QStringLiteral("docx"), QStringLiteral("x-office-document")},
+        {QStringLiteral("odt"), QStringLiteral("x-office-document")}, {QStringLiteral("xls"), QStringLiteral("x-office-spreadsheet")},
+        {QStringLiteral("xlsx"), QStringLiteral("x-office-spreadsheet")}, {QStringLiteral("ods"), QStringLiteral("x-office-spreadsheet")},
+        {QStringLiteral("ppt"), QStringLiteral("x-office-presentation")}, {QStringLiteral("pptx"), QStringLiteral("x-office-presentation")},
+        {QStringLiteral("odp"), QStringLiteral("x-office-presentation")}, {QStringLiteral("txt"), QStringLiteral("text-x-generic")},
+        {QStringLiteral("log"), QStringLiteral("text-x-generic")}, {QStringLiteral("md"), QStringLiteral("text-x-generic")},
+        {QStringLiteral("cpp"), QStringLiteral("text-x-source")}, {QStringLiteral("h"), QStringLiteral("text-x-source")},
+        {QStringLiteral("c"), QStringLiteral("text-x-source")}, {QStringLiteral("py"), QStringLiteral("text-x-script")},
+        {QStringLiteral("js"), QStringLiteral("text-x-script")}, {QStringLiteral("sh"), QStringLiteral("text-x-script")},
+        {QStringLiteral("html"), QStringLiteral("text-html")}, {QStringLiteral("css"), QStringLiteral("text-css")}
+    };
+
+    const QString suffix = QFileInfo(fileName).suffix().toLower();
+    if (extensionIcons.contains(suffix)) {
+        return themedIcon(extensionIcons.value(suffix));
+    }
+
+    const QMimeType mime = QMimeDatabase().mimeTypeForFile(fileName, QMimeDatabase::MatchExtension);
+    if (!mime.iconName().isEmpty()) {
+        return themedIcon(mime.iconName());
+    }
+    if (!mime.genericIconName().isEmpty()) {
+        return themedIcon(mime.genericIconName());
+    }
+    return themedIcon(QStringLiteral("text-x-generic"));
 }
 }
 
@@ -488,9 +545,7 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
                     mime->setProperty("IsDirectSaveMode", true);
                     QDrag *drag = new QDrag(m_remoteTable);
                     drag->setMimeData(mime);
-                    drag->setPixmap(dragPreviewPixmap(names, entries.first().directory
-                                                       ? QIcon::fromTheme(QStringLiteral("folder"))
-                                                       : QIcon::fromTheme(QStringLiteral("text-x-generic"))));
+                    drag->setPixmap(dragPreviewPixmap(names, fileIcon(entries.first().name, entries.first().directory)));
                     drag->setHotSpot(QPoint(18, 18));
                     drag->exec(Qt::CopyAction | Qt::MoveAction, Qt::CopyAction);
                     const QUrl directSaveUrl = mime->property("DirectSaveUrl").toUrl();
@@ -583,9 +638,7 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
                     mime->setUrls(urls);
                     QDrag *drag = new QDrag(m_localView);
                     drag->setMimeData(mime);
-                    drag->setPixmap(dragPreviewPixmap(names, QFileInfo(paths.first()).isDir()
-                                                       ? QIcon::fromTheme(QStringLiteral("folder"))
-                                                       : QIcon::fromTheme(QStringLiteral("text-x-generic"))));
+                    drag->setPixmap(dragPreviewPixmap(names, fileIcon(QFileInfo(paths.first()).fileName(), QFileInfo(paths.first()).isDir())));
                     drag->setHotSpot(QPoint(18, 18));
                     drag->exec(Qt::CopyAction | Qt::MoveAction, Qt::MoveAction);
                     return true;
@@ -1301,7 +1354,7 @@ void MainWindow::showEntries(const QString &path, const QVector<RemoteEntry> &en
     for (int row = 0; row < entries.size(); ++row) {
         const RemoteEntry &entry = entries.at(row);
         const int tableRow = row + 1;
-        QTableWidgetItem *name = new QTableWidgetItem(entry.directory ? QIcon::fromTheme(QStringLiteral("folder")) : QIcon::fromTheme(QStringLiteral("text-x-generic")), entry.name);
+        QTableWidgetItem *name = new QTableWidgetItem(fileIcon(entry.name, entry.directory), entry.name);
         name->setData(Qt::UserRole, entry.path);
         name->setData(Qt::UserRole + 1, entry.directory);
         name->setData(Qt::UserRole + 2, false);
@@ -1614,7 +1667,7 @@ void MainWindow::loadLocalDirectory(const QString &path)
     for (int i = 0; i < files.size(); ++i) {
         const QFileInfo info = files.at(i);
         const int row = i + 1;
-        QTableWidgetItem *name = new QTableWidgetItem(info.isDir() ? QIcon::fromTheme(QStringLiteral("folder")) : QIcon::fromTheme(QStringLiteral("text-x-generic")), info.fileName());
+        QTableWidgetItem *name = new QTableWidgetItem(fileIcon(info.fileName(), info.isDir()), info.fileName());
         name->setData(Qt::UserRole, info.absoluteFilePath());
         name->setData(Qt::UserRole + 1, info.isDir());
         name->setData(Qt::UserRole + 2, false);

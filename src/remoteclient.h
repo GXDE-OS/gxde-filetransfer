@@ -68,6 +68,7 @@ private:
     QString buildUrl(const RemoteConnection &connection, const QString &path) const;
     QString normalizePath(const QString &path) const;
     QString joinPath(const QString &basePath, const QString &name) const;
+    void addAuthenticationArguments(QStringList *args, const RemoteConnection &connection) const;
     QStringList curlArguments(const RemoteConnection &connection, const QString &url) const;
     QVector<RemoteEntry> parseDirectoryListing(const QString &protocol, const QString &path, const QByteArray &data) const;
     QVector<RemoteEntry> parseUnixListing(const QString &path, const QString &text) const;

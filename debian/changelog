@@ -1,3 +1,11 @@
+gxde-filetransfer (0.2) unstable; urgency=medium
+
+  * Add transfer record deletion and split transfers into status tabs.
+  * Improve WebDAV authentication handling with fallback negotiation.
+  * Improve high-DPI icon handling and file type icons.
+
+ -- GXDE Team <team@gxde.org>  Tue, 05 May 2026 00:00:00 +0000
+
 gxde-filetransfer (0.1) unstable; urgency=medium
 
   * Initial release.

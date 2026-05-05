@@ -853,12 +853,7 @@ void MainWindow::downloadSelected()
         QMessageBox::information(this, tr("Select file"), tr("Please select a remote file to download."));
         return;
     }
-    if (m_transferClient->isBusy()) {
-        QMessageBox::information(this, tr("Transfer busy"), tr("A transfer is already running. Queueing multiple transfers is not implemented yet."));
-        m_nextDownloadShouldOpen = false;
-        return;
-    }
-    m_openDownloadedAfterTransfer = m_nextDownloadShouldOpen;
+    m_openDownloadedAfterTransfer = m_openDownloadedAfterTransfer || m_nextDownloadShouldOpen;
     m_nextDownloadShouldOpen = false;
     queueDownloads(entries, m_localPathEdit->text());
 }
@@ -2224,7 +2219,7 @@ void MainWindow::setBrowsingBusy(bool busy)
 void MainWindow::setTransferBusy(bool busy)
 {
     m_uploadButton->setEnabled(!busy);
-    m_downloadButton->setEnabled(!busy);
+    m_downloadButton->setEnabled(true);
 }
 
 void MainWindow::appendLog(const QString &message)

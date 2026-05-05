@@ -140,7 +140,7 @@
     </message>
     <message>
         <source>Transfer busy</source>
-        <translation>传输忙</translation>
+        <translation type="vanished">传输忙</translation>
     </message>
     <message>
         <source>Transfer started: %1</source>
@@ -232,7 +232,7 @@
     </message>
     <message>
         <source>A transfer is already running. Queueing multiple transfers is not implemented yet.</source>
-        <translation>已有传输正在进行。尚未实现多个传输排队。</translation>
+        <translation type="vanished">已有传输正在进行。尚未实现多个传输排队。</translation>
     </message>
     <message>
         <source>Delete local files</source>

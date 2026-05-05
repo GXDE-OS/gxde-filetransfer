@@ -955,7 +955,7 @@ void MainWindow::showLocalContextMenu(const QPoint &pos)
     QAction *refreshAction = menu.addAction(tr("Refresh"));
     refreshAction->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
     openAction->setEnabled(hasSelection);
-    uploadAction->setEnabled(hasSelection && !m_transferClient->isBusy());
+    uploadAction->setEnabled(hasSelection);
     deleteAction->setEnabled(hasSelection);
 
     QAction *chosen = menu.exec(m_localView->viewport()->mapToGlobal(pos));
@@ -2330,7 +2330,8 @@ void MainWindow::setBrowsingBusy(bool busy)
 
 void MainWindow::setTransferBusy(bool busy)
 {
-    m_uploadButton->setEnabled(!busy);
+    Q_UNUSED(busy)
+    m_uploadButton->setEnabled(true);
     m_downloadButton->setEnabled(true);
 }
 

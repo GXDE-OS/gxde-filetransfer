@@ -120,7 +120,7 @@
     </message>
     <message>
         <source>Failed</source>
-        <translation>失败</translation>
+        <translation>已失败</translation>
     </message>
     <message>
         <source>Starting</source>
@@ -272,7 +272,7 @@
     </message>
     <message>
         <source>Delete Error Records</source>
-        <translation>删除错误记录</translation>
+        <translation type="vanished">删除错误记录</translation>
     </message>
     <message>
         <source>Processing</source>
@@ -284,7 +284,7 @@
     </message>
     <message>
         <source>Errors</source>
-        <translation>错误</translation>
+        <translation type="vanished">错误</translation>
     </message>
     <message>
         <source>Please enter a host before saving.</source>
@@ -496,7 +496,15 @@
     </message>
     <message>
         <source>%1/s</source>
-        <translation>%1/秒</translation>
+        <translation type="vanished">%1/秒</translation>
+    </message>
+    <message>
+        <source>Requeue Selected</source>
+        <translation>重新加入任务队列</translation>
+    </message>
+    <message>
+        <source>Queued</source>
+        <translation>已排队</translation>
     </message>
 </context>
 <context>
@@ -611,6 +619,14 @@
     <message>
         <source>Curl stderr:</source>
         <translation>Curl 错误输出：</translation>
+    </message>
+    <message>
+        <source>%1 B/s</source>
+        <translation>%1 B/秒</translation>
+    </message>
+    <message>
+        <source>%1/s</source>
+        <translation>%1/秒</translation>
     </message>
 </context>
 </TS>

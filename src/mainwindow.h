@@ -96,6 +96,7 @@ private:
     void startNextDownload();
     void startNextRemoteDelete();
     void startNextRemoteMove();
+    void cancelTransferRows(const QList<int> &rows);
     void setBrowsingBusy(bool busy);
     void setTransferBusy(bool busy);
     void appendLog(const QString &message);
@@ -106,7 +107,11 @@ private:
     void removeTransferRows(QTableWidget *table, const QList<int> &rows);
     void moveTransferRow(QTableWidget *sourceTable, int sourceRow, QTableWidget *targetTable, const QString &status);
     void movePendingDownloadRowsToError(const QString &status);
+    void movePendingUploadRowsToError(const QString &status);
     void adjustPendingDownloadRowsAfterRemoved(int removedRow);
+    void adjustPendingUploadRowsAfterRemoved(int removedRow);
+    bool removeQueuedTransferForRow(int row);
+    void requeueFailedTransfers(const QList<int> &rows);
     bool confirmDownloadConflict(const RemoteEntry &entry, const QString &localPath, bool *resume);
     void loadSavedSites();
     void persistSavedSites();
@@ -146,8 +151,10 @@ private:
     int m_localDropHoverRow = -1;
     QString m_uploadConflictChoice;
     QStringList m_pendingUploadDirectories;
+    QVector<int> m_pendingUploadDirectoryRows;
     QStringList m_pendingUploadLocalPaths;
     QStringList m_pendingUploadRemotePaths;
+    QVector<int> m_pendingUploadRows;
     QVector<RemoteEntry> m_pendingDownloads;
     QStringList m_pendingDownloadLocalPaths;
     QVector<int> m_pendingDownloadRows;

@@ -443,7 +443,7 @@ QWidget *MainWindow::createTransferPane()
     m_errorTransferTable = createTransferTable(m_transferTabs);
     m_transferTabs->addTab(m_transferTable, tr("Processing"));
     m_transferTabs->addTab(m_completedTransferTable, tr("Completed"));
-    m_transferTabs->addTab(m_errorTransferTable, tr("Errors"));
+    m_transferTabs->addTab(m_errorTransferTable, tr("Failed"));
     transferSplitter->addWidget(m_transferTabs);
 
     m_logGroup = new QGroupBox(tr("Log"), transferSplitter);
@@ -913,9 +913,15 @@ void MainWindow::openLocalFile()
 
 void MainWindow::cancelSelectedTransfer()
 {
-    if (m_transferClient->isBusy()) {
-        m_transferClient->cancel();
+    QList<int> selectedRows;
+    const QModelIndexList indexes = m_transferTable->selectionModel()->selectedRows();
+    for (const QModelIndex &index : indexes) {
+        selectedRows << index.row();
     }
+    if (selectedRows.isEmpty() && m_activeTransferRow >= 0) {
+        selectedRows << m_activeTransferRow;
+    }
+    cancelTransferRows(selectedRows);
 }
 
 void MainWindow::showLocalContextMenu(const QPoint &pos)
@@ -1044,9 +1050,14 @@ void MainWindow::showTransferContextMenu(const QPoint &pos)
 
     QMenu menu(this);
     QAction *cancelAction = nullptr;
+    QAction *requeueAction = nullptr;
     if (table == m_transferTable) {
         cancelAction = menu.addAction(tr("Cancel Transfer"));
-        cancelAction->setEnabled(m_transferClient->isBusy());
+        cancelAction->setEnabled(hasSelection);
+        menu.addSeparator();
+    } else if (table == m_errorTransferTable) {
+        requeueAction = menu.addAction(tr("Requeue Selected"));
+        requeueAction->setEnabled(hasSelection);
         menu.addSeparator();
     }
     QAction *deleteSelectedAction = menu.addAction(tr("Delete Selected Record"));
@@ -1058,27 +1069,33 @@ void MainWindow::showTransferContextMenu(const QPoint &pos)
     } else if (table == m_completedTransferTable) {
         deleteAllAction = menu.addAction(tr("Delete Completed Records"));
     } else {
-        deleteAllAction = menu.addAction(tr("Delete Error Records"));
+        deleteAllAction = menu.addAction(tr("Delete Failed Records"));
     }
     deleteAllAction->setEnabled(!allRows.isEmpty());
 
     QAction *chosen = menu.exec(table->viewport()->mapToGlobal(pos));
     if (chosen == cancelAction && cancelAction) {
-        cancelSelectedTransfer();
+        QList<int> selectedRows;
+        const QModelIndexList indexes = table->selectionModel()->selectedRows();
+        for (const QModelIndex &index : indexes) {
+            selectedRows << index.row();
+        }
+        cancelTransferRows(selectedRows);
+    } else if (chosen == requeueAction && requeueAction) {
+        QList<int> selectedRows;
+        const QModelIndexList indexes = table->selectionModel()->selectedRows();
+        for (const QModelIndex &index : indexes) {
+            selectedRows << index.row();
+        }
+        requeueFailedTransfers(selectedRows);
     } else if (chosen == deleteSelectedAction) {
         QList<int> selectedRows;
         const QModelIndexList indexes = table->selectionModel()->selectedRows();
         for (const QModelIndex &index : indexes) {
             selectedRows << index.row();
         }
-        if (table == m_transferTable && !selectedRows.isEmpty()) {
-            cancelSelectedTransfer();
-        }
         removeTransferRows(table, selectedRows);
     } else if (chosen == deleteAllAction) {
-        if (table == m_transferTable) {
-            cancelSelectedTransfer();
-        }
         removeTransferRows(table, allRows);
     }
 }
@@ -1450,14 +1467,14 @@ void MainWindow::showTransferCancelled()
 {
     setTransferBusy(false);
     updateFirstRunningTransfer(tr("Cancelled"));
-    m_pendingUploadDirectories.clear();
-    m_pendingUploadLocalPaths.clear();
-    m_pendingUploadRemotePaths.clear();
-    m_pendingDownloads.clear();
-    m_pendingDownloadLocalPaths.clear();
-    movePendingDownloadRowsToError(tr("Cancelled"));
-    m_pendingDownloadRows.clear();
-    m_openDownloadedAfterTransfer = false;
+    if (m_lastTransferWasUpload) {
+        startNextUpload();
+    } else {
+        if (m_pendingDownloads.isEmpty()) {
+            m_openDownloadedAfterTransfer = false;
+        }
+        startNextDownload();
+    }
     m_nextDownloadShouldOpen = false;
 }
 
@@ -1489,8 +1506,11 @@ void MainWindow::showTransferError(const QString &message, const QString &detail
     setTransferBusy(false);
     updateFirstRunningTransfer(tr("Failed"));
     m_pendingUploadDirectories.clear();
+    movePendingUploadRowsToError(tr("Failed"));
+    m_pendingUploadDirectoryRows.clear();
     m_pendingUploadLocalPaths.clear();
     m_pendingUploadRemotePaths.clear();
+    m_pendingUploadRows.clear();
     m_pendingDownloads.clear();
     m_pendingDownloadLocalPaths.clear();
     movePendingDownloadRowsToError(tr("Failed"));
@@ -1784,12 +1804,6 @@ void MainWindow::queueDownloads(const QVector<RemoteEntry> &entries, const QStri
 
 bool MainWindow::collectRemoteDownloads(const RemoteEntry &entry, const QString &localDirectory)
 {
-    QDir localDir(localDirectory);
-    if (!localDir.exists() && !QDir().mkpath(localDir.absolutePath())) {
-        appendLog(tr("Unable to create download folder: %1").arg(localDir.absolutePath()));
-        return false;
-    }
-
     RemoteClient lister;
     QEventLoop loop;
     QVector<RemoteEntry> children;
@@ -1814,11 +1828,11 @@ bool MainWindow::collectRemoteDownloads(const RemoteEntry &entry, const QString 
 
     for (const RemoteEntry &child : children) {
         if (child.directory) {
-            collectRemoteDownloads(child, localDir.filePath(child.name));
+            collectRemoteDownloads(child, QDir(localDirectory).filePath(child.name));
         } else {
             m_pendingDownloads << child;
-            m_pendingDownloadLocalPaths << localDir.filePath(child.name);
-            m_pendingDownloadRows << addTransferRow(tr("Download"), child.path, localDir.filePath(child.name), child.size, false);
+            m_pendingDownloadLocalPaths << QDir(localDirectory).filePath(child.name);
+            m_pendingDownloadRows << addTransferRow(tr("Download"), child.path, QDir(localDirectory).filePath(child.name), child.size, false);
         }
     }
     return true;
@@ -2090,11 +2104,14 @@ bool MainWindow::confirmUploadConflict(const QString &localPath, const QString &
 bool MainWindow::uploadPath(const QString &localPath, const QString &remoteBasePath)
 {
     QFileInfo info(localPath);
+    QStringList uploadDirectories;
+    QStringList uploadLocalPaths;
+    QStringList uploadRemotePaths;
     if (info.isDir()) {
         QDir sourceDir(localPath);
         const QString folderRemoteBase = joinRemotePath(remoteBasePath, info.fileName());
-        if (!m_pendingUploadDirectories.contains(folderRemoteBase)) {
-            m_pendingUploadDirectories << folderRemoteBase;
+        if (!uploadDirectories.contains(folderRemoteBase) && !m_pendingUploadDirectories.contains(folderRemoteBase)) {
+            uploadDirectories << folderRemoteBase;
         }
 
         QDirIterator dirIt(localPath, QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
@@ -2102,8 +2119,8 @@ bool MainWindow::uploadPath(const QString &localPath, const QString &remoteBaseP
             const QString dirPath = dirIt.next();
             const QString relative = sourceDir.relativeFilePath(dirPath);
             const QString remoteDir = joinRemotePath(folderRemoteBase, relative);
-            if (!m_pendingUploadDirectories.contains(remoteDir)) {
-                m_pendingUploadDirectories << remoteDir;
+            if (!uploadDirectories.contains(remoteDir) && !m_pendingUploadDirectories.contains(remoteDir)) {
+                uploadDirectories << remoteDir;
             }
         }
 
@@ -2116,14 +2133,11 @@ bool MainWindow::uploadPath(const QString &localPath, const QString &remoteBaseP
             bool skip = false;
             if (remoteEntryForPath(remotePath, &remoteEntry)
                 && !confirmUploadConflict(filePath, remotePath, remoteEntry.size, &skip)) {
-                m_pendingUploadDirectories.clear();
-                m_pendingUploadLocalPaths.clear();
-                m_pendingUploadRemotePaths.clear();
                 return false;
             }
             if (!skip) {
-                m_pendingUploadLocalPaths << filePath;
-                m_pendingUploadRemotePaths << remotePath;
+                uploadLocalPaths << filePath;
+                uploadRemotePaths << remotePath;
             }
         }
     } else {
@@ -2132,15 +2146,24 @@ bool MainWindow::uploadPath(const QString &localPath, const QString &remoteBaseP
         bool skip = false;
         if (remoteEntryForPath(remotePath, &remoteEntry)
             && !confirmUploadConflict(localPath, remotePath, remoteEntry.size, &skip)) {
-            m_pendingUploadDirectories.clear();
-            m_pendingUploadLocalPaths.clear();
-            m_pendingUploadRemotePaths.clear();
             return false;
         }
         if (!skip) {
-            m_pendingUploadLocalPaths << localPath;
-            m_pendingUploadRemotePaths << remotePath;
+            uploadLocalPaths << localPath;
+            uploadRemotePaths << remotePath;
         }
+    }
+
+    for (const QString &remoteDir : uploadDirectories) {
+        m_pendingUploadDirectories << remoteDir;
+        m_pendingUploadDirectoryRows << addTransferRow(tr("Create Folder"), QString(), remoteDir, -1, false);
+    }
+    for (int i = 0; i < uploadLocalPaths.size(); ++i) {
+        const QString filePath = uploadLocalPaths.at(i);
+        const QString remotePath = uploadRemotePaths.at(i);
+        m_pendingUploadLocalPaths << filePath;
+        m_pendingUploadRemotePaths << remotePath;
+        m_pendingUploadRows << addTransferRow(tr("Upload"), filePath, remotePath, QFileInfo(filePath).size(), false);
     }
 
     startNextUpload();
@@ -2155,7 +2178,13 @@ void MainWindow::startNextUpload()
 
     if (!m_pendingUploadDirectories.isEmpty()) {
         const QString remotePath = m_pendingUploadDirectories.takeFirst();
-        m_activeTransferRow = addTransferRow(tr("Create Folder"), QString(), remotePath);
+        const int transferRow = m_pendingUploadDirectoryRows.isEmpty() ? -1 : m_pendingUploadDirectoryRows.takeFirst();
+        if (transferRow >= 0) {
+            m_activeTransferRow = transferRow;
+            startTransferRow(m_activeTransferRow, -1);
+        } else {
+            m_activeTransferRow = addTransferRow(tr("Create Folder"), QString(), remotePath);
+        }
         m_lastTransferWasUpload = true;
         m_transferClient->makeDirectory(currentConnection(), remotePath);
         return;
@@ -2167,7 +2196,13 @@ void MainWindow::startNextUpload()
 
     const QString localPath = m_pendingUploadLocalPaths.takeFirst();
     const QString remotePath = m_pendingUploadRemotePaths.takeFirst();
-    m_activeTransferRow = addTransferRow(tr("Upload"), localPath, remotePath, QFileInfo(localPath).size());
+    const int transferRow = m_pendingUploadRows.isEmpty() ? -1 : m_pendingUploadRows.takeFirst();
+    if (transferRow >= 0) {
+        m_activeTransferRow = transferRow;
+        startTransferRow(m_activeTransferRow, QFileInfo(localPath).size());
+    } else {
+        m_activeTransferRow = addTransferRow(tr("Upload"), localPath, remotePath, QFileInfo(localPath).size());
+    }
     m_lastTransferWasUpload = true;
     m_transferClient->upload(currentConnection(), localPath, remotePath);
 }
@@ -2188,6 +2223,15 @@ void MainWindow::startNextDownload()
         }
         if (m_pendingDownloads.isEmpty()) {
             m_openDownloadedAfterTransfer = false;
+        }
+        startNextDownload();
+        return;
+    }
+    QDir localParent = QFileInfo(localPath).absoluteDir();
+    if (!localParent.exists() && !QDir().mkpath(localParent.absolutePath())) {
+        appendLog(tr("Unable to create download folder: %1").arg(localParent.absolutePath()));
+        if (transferRow >= 0) {
+            moveTransferRow(m_transferTable, transferRow, m_errorTransferTable, tr("Failed"));
         }
         startNextDownload();
         return;
@@ -2221,6 +2265,33 @@ void MainWindow::startNextRemoteMove()
     const RemoteEntry entry = m_pendingRemoteMoves.takeFirst();
     const QString destination = m_pendingRemoteMoveDestinations.takeFirst();
     m_client->move(currentConnection(), entry.path, destination);
+}
+
+void MainWindow::cancelTransferRows(const QList<int> &rows)
+{
+    QList<int> sortedRows = rows;
+    std::sort(sortedRows.begin(), sortedRows.end(), std::greater<int>());
+
+    bool cancelActive = false;
+    for (const int row : sortedRows) {
+        if (row < 0 || row >= m_transferTable->rowCount()) {
+            continue;
+        }
+        if (row == m_activeTransferRow) {
+            cancelActive = true;
+            continue;
+        }
+        QTableWidgetItem *statusItem = m_transferTable->item(row, 3);
+        if (!statusItem || statusItem->text() != tr("Queued")) {
+            continue;
+        }
+        removeQueuedTransferForRow(row);
+        moveTransferRow(m_transferTable, row, m_errorTransferTable, tr("Cancelled"));
+    }
+
+    if (cancelActive && m_transferClient->isBusy()) {
+        m_transferClient->cancel();
+    }
 }
 
 void MainWindow::setBrowsingBusy(bool busy)
@@ -2344,25 +2415,18 @@ void MainWindow::removeTransferRows(QTableWidget *table, const QList<int> &rows)
             continue;
         }
         if (table == m_transferTable) {
-            const int pendingIndex = m_pendingDownloadRows.indexOf(row);
-            if (pendingIndex >= 0) {
-                m_pendingDownloadRows.removeAt(pendingIndex);
-                if (pendingIndex < m_pendingDownloads.size()) {
-                    m_pendingDownloads.removeAt(pendingIndex);
-                }
-                if (pendingIndex < m_pendingDownloadLocalPaths.size()) {
-                    m_pendingDownloadLocalPaths.removeAt(pendingIndex);
-                }
+            if (row == m_activeTransferRow) {
+                continue;
             }
+            removeQueuedTransferForRow(row);
         }
-        if (table == m_transferTable && row == m_activeTransferRow) {
-            m_activeTransferRow = -1;
-        } else if (table == m_transferTable && m_activeTransferRow > row) {
+        if (table == m_transferTable && m_activeTransferRow > row) {
             --m_activeTransferRow;
         }
         table->removeRow(row);
         if (table == m_transferTable) {
             adjustPendingDownloadRowsAfterRemoved(row);
+            adjustPendingUploadRowsAfterRemoved(row);
         }
     }
 }
@@ -2388,8 +2452,13 @@ void MainWindow::moveTransferRow(QTableWidget *sourceTable, int sourceRow, QTabl
 
     sourceTable->removeRow(sourceRow);
     if (sourceTable == m_transferTable) {
-        m_activeTransferRow = -1;
+        if (sourceRow == m_activeTransferRow) {
+            m_activeTransferRow = -1;
+        } else if (m_activeTransferRow > sourceRow) {
+            --m_activeTransferRow;
+        }
         adjustPendingDownloadRowsAfterRemoved(sourceRow);
+        adjustPendingUploadRowsAfterRemoved(sourceRow);
     }
     targetTable->scrollToBottom();
 }
@@ -2403,6 +2472,16 @@ void MainWindow::movePendingDownloadRowsToError(const QString &status)
     }
 }
 
+void MainWindow::movePendingUploadRowsToError(const QString &status)
+{
+    QVector<int> rows = m_pendingUploadDirectoryRows;
+    rows += m_pendingUploadRows;
+    std::sort(rows.begin(), rows.end(), std::greater<int>());
+    for (const int row : rows) {
+        moveTransferRow(m_transferTable, row, m_errorTransferTable, status);
+    }
+}
+
 void MainWindow::adjustPendingDownloadRowsAfterRemoved(int removedRow)
 {
     for (int &row : m_pendingDownloadRows) {
@@ -2410,6 +2489,93 @@ void MainWindow::adjustPendingDownloadRowsAfterRemoved(int removedRow)
             --row;
         }
     }
+}
+
+void MainWindow::adjustPendingUploadRowsAfterRemoved(int removedRow)
+{
+    for (int &row : m_pendingUploadDirectoryRows) {
+        if (row > removedRow) {
+            --row;
+        }
+    }
+    for (int &row : m_pendingUploadRows) {
+        if (row > removedRow) {
+            --row;
+        }
+    }
+}
+
+bool MainWindow::removeQueuedTransferForRow(int row)
+{
+    int pendingIndex = m_pendingDownloadRows.indexOf(row);
+    if (pendingIndex >= 0) {
+        m_pendingDownloadRows.removeAt(pendingIndex);
+        if (pendingIndex < m_pendingDownloads.size()) {
+            m_pendingDownloads.removeAt(pendingIndex);
+        }
+        if (pendingIndex < m_pendingDownloadLocalPaths.size()) {
+            m_pendingDownloadLocalPaths.removeAt(pendingIndex);
+        }
+        return true;
+    }
+
+    pendingIndex = m_pendingUploadDirectoryRows.indexOf(row);
+    if (pendingIndex >= 0) {
+        m_pendingUploadDirectoryRows.removeAt(pendingIndex);
+        if (pendingIndex < m_pendingUploadDirectories.size()) {
+            m_pendingUploadDirectories.removeAt(pendingIndex);
+        }
+        return true;
+    }
+
+    pendingIndex = m_pendingUploadRows.indexOf(row);
+    if (pendingIndex >= 0) {
+        m_pendingUploadRows.removeAt(pendingIndex);
+        if (pendingIndex < m_pendingUploadLocalPaths.size()) {
+            m_pendingUploadLocalPaths.removeAt(pendingIndex);
+        }
+        if (pendingIndex < m_pendingUploadRemotePaths.size()) {
+            m_pendingUploadRemotePaths.removeAt(pendingIndex);
+        }
+        return true;
+    }
+    return false;
+}
+
+void MainWindow::requeueFailedTransfers(const QList<int> &rows)
+{
+    QList<int> sortedRows = rows;
+    std::sort(sortedRows.begin(), sortedRows.end());
+
+    for (const int row : sortedRows) {
+        if (row < 0 || row >= m_errorTransferTable->rowCount()) {
+            continue;
+        }
+        const QString direction = m_errorTransferTable->item(row, 0) ? m_errorTransferTable->item(row, 0)->text() : QString();
+        const QString source = m_errorTransferTable->item(row, 1) ? m_errorTransferTable->item(row, 1)->text() : QString();
+        const QString destination = m_errorTransferTable->item(row, 2) ? m_errorTransferTable->item(row, 2)->text() : QString();
+        if (direction == tr("Download")) {
+            RemoteEntry entry;
+            entry.name = remoteFileName(source);
+            entry.path = source;
+            entry.directory = false;
+            entry.size = -1;
+            m_pendingDownloads << entry;
+            m_pendingDownloadLocalPaths << destination;
+            m_pendingDownloadRows << addTransferRow(tr("Download"), source, destination, -1, false);
+        } else if (direction == tr("Upload")) {
+            m_pendingUploadLocalPaths << source;
+            m_pendingUploadRemotePaths << destination;
+            m_pendingUploadRows << addTransferRow(tr("Upload"), source, destination, QFileInfo(source).size(), false);
+        } else if (direction == tr("Create Folder")) {
+            m_pendingUploadDirectories << destination;
+            m_pendingUploadDirectoryRows << addTransferRow(tr("Create Folder"), QString(), destination, -1, false);
+        }
+    }
+
+    removeTransferRows(m_errorTransferTable, rows);
+    startNextUpload();
+    startNextDownload();
 }
 
 bool MainWindow::confirmDownloadConflict(const RemoteEntry &entry, const QString &localPath, bool *resume)

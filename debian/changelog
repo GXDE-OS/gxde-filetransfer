@@ -1,3 +1,10 @@
+gxde-filetransfer (0.4) unstable; urgency=medium
+
+  * Improve transfer queue handling for cancel, delete and retry actions.
+  * Delay local download folder creation until a transfer starts.
+
+ -- GXDE Team <team@gxde.org>  Tue, 05 May 2026 00:00:00 +0000
+
 gxde-filetransfer (0.3.1) unstable; urgency=medium
 
   * Force Qt5 selection in Debian builds.

@@ -65,11 +65,20 @@ private:
         MoveOperation
     };
 
+    enum AuthenticationMode {
+        BasicAuthentication,
+        AnyAuthentication
+    };
+
+    void startCurrentOperation();
     QString buildUrl(const RemoteConnection &connection, const QString &path) const;
     QString normalizePath(const QString &path) const;
     QString joinPath(const QString &basePath, const QString &name) const;
-    void addAuthenticationArguments(QStringList *args, const RemoteConnection &connection) const;
-    QStringList curlArguments(const RemoteConnection &connection, const QString &url) const;
+    bool isWebDavConnection(const RemoteConnection &connection) const;
+    void addLocationArguments(QStringList *args, const RemoteConnection &connection) const;
+    void addAuthenticationArguments(QStringList *args, const RemoteConnection &connection, AuthenticationMode mode) const;
+    bool shouldRetryWithAnyAuth(int exitCode, QProcess::ExitStatus exitStatus, const QByteArray &errorOutput) const;
+    QStringList curlArguments(const RemoteConnection &connection, const QString &url, AuthenticationMode mode) const;
     QVector<RemoteEntry> parseDirectoryListing(const QString &protocol, const QString &path, const QByteArray &data) const;
     QVector<RemoteEntry> parseUnixListing(const QString &path, const QString &text) const;
     QVector<RemoteEntry> parseWebDavListing(const QString &path, const QByteArray &data) const;
@@ -86,5 +95,9 @@ private:
     QString m_removePath;
     QString m_moveSourcePath;
     QString m_moveDestinationPath;
+    bool m_removeDirectory = false;
+    bool m_resumeDownload = false;
+    AuthenticationMode m_authenticationMode = BasicAuthentication;
+    bool m_canRetryAnyAuth = false;
     bool m_cancelled = false;
 };

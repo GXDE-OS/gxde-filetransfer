@@ -33,24 +33,12 @@ void RemoteClient::list(const RemoteConnection &connection, const QString &path)
     }
     m_currentUrl = buildUrl(connection, m_currentPath);
 
-    m_process = new QProcess(this);
-    m_process->setProgram(QStringLiteral("curl"));
-    m_process->setArguments(curlArguments(connection, m_currentUrl));
-    m_process->setProcessChannelMode(QProcess::SeparateChannels);
-
-    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, &RemoteClient::onFinished);
-    connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-        Q_UNUSED(error)
-        if (m_cancelled) {
-            return;
-        }
-        emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
-    });
+    m_authenticationMode = BasicAuthentication;
+    m_canRetryAnyAuth = isWebDavConnection(connection) && !connection.username.isEmpty();
 
     emit started(m_currentUrl);
     emit logMessage(tr("Listing %1").arg(m_currentUrl));
-    m_process->start();
+    startCurrentOperation();
 }
 
 void RemoteClient::download(const RemoteConnection &connection, const QString &remotePath, const QString &localPath, bool resume)
@@ -67,40 +55,13 @@ void RemoteClient::download(const RemoteConnection &connection, const QString &r
     m_currentUrl = buildUrl(connection, m_currentPath);
     m_transferSource = m_currentUrl;
     m_transferDestination = localPath;
-
-    m_process = new QProcess(this);
-    m_process->setProgram(QStringLiteral("curl"));
-    QStringList args;
-    args << QStringLiteral("--show-error")
-         << QStringLiteral("--fail")
-         << QStringLiteral("--globoff")
-         << QStringLiteral("--progress-bar")
-         << QStringLiteral("--ftp-create-dirs")
-         << QStringLiteral("--location")
-         << QStringLiteral("--connect-timeout") << QStringLiteral("15")
-         << QStringLiteral("--max-time") << QStringLiteral("0");
-    addAuthenticationArguments(&args, connection);
-    if (resume) {
-        args << QStringLiteral("--continue-at") << QStringLiteral("-");
-    }
-    args << QStringLiteral("--output") << localPath << m_currentUrl;
-    m_process->setArguments(args);
-    m_process->setProcessChannelMode(QProcess::SeparateChannels);
-
-    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, &RemoteClient::onFinished);
-    connect(m_process, &QProcess::readyReadStandardError, this, &RemoteClient::readTransferProgress);
-    connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-        Q_UNUSED(error)
-        if (m_cancelled) {
-            return;
-        }
-        emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
-    });
+    m_resumeDownload = resume;
+    m_authenticationMode = BasicAuthentication;
+    m_canRetryAnyAuth = isWebDavConnection(connection) && !connection.username.isEmpty();
 
     emit started(m_currentUrl);
     emit logMessage(tr("Downloading %1 to %2").arg(m_currentUrl, localPath));
-    m_process->start();
+    startCurrentOperation();
 }
 
 void RemoteClient::makeDirectory(const RemoteConnection &connection, const QString &remotePath)
@@ -120,44 +81,12 @@ void RemoteClient::makeDirectory(const RemoteConnection &connection, const QStri
     m_currentUrl = buildUrl(connection, m_directoryPath);
     m_transferSource = QString();
     m_transferDestination = m_currentUrl;
-
-    m_process = new QProcess(this);
-    m_process->setProgram(QStringLiteral("curl"));
-    QStringList args;
-    args << QStringLiteral("--silent")
-         << QStringLiteral("--show-error")
-         << QStringLiteral("--fail")
-         << QStringLiteral("--globoff")
-         << QStringLiteral("--connect-timeout") << QStringLiteral("15")
-         << QStringLiteral("--max-time") << QStringLiteral("60");
-    addAuthenticationArguments(&args, connection);
-
-    const QString protocol = connection.protocol.toLower();
-    if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
-        args << QStringLiteral("--request") << QStringLiteral("MKCOL") << m_currentUrl;
-    } else if (protocol == QLatin1String("sftp")) {
-        args << QStringLiteral("--quote") << QStringLiteral("mkdir %1").arg(m_directoryPath)
-             << buildUrl(connection, QStringLiteral("/"));
-    } else {
-        args << QStringLiteral("--quote") << QStringLiteral("MKD %1").arg(m_directoryPath)
-             << buildUrl(connection, QStringLiteral("/"));
-    }
-
-    m_process->setArguments(args);
-    m_process->setProcessChannelMode(QProcess::SeparateChannels);
-    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, &RemoteClient::onFinished);
-    connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-        Q_UNUSED(error)
-        if (m_cancelled) {
-            return;
-        }
-        emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
-    });
+    m_authenticationMode = BasicAuthentication;
+    m_canRetryAnyAuth = isWebDavConnection(connection) && !connection.username.isEmpty();
 
     emit started(m_currentUrl);
     emit logMessage(tr("Creating remote folder %1").arg(m_currentUrl));
-    m_process->start();
+    startCurrentOperation();
 }
 
 void RemoteClient::upload(const RemoteConnection &connection, const QString &localPath, const QString &remotePath)
@@ -174,37 +103,12 @@ void RemoteClient::upload(const RemoteConnection &connection, const QString &loc
     m_currentUrl = buildUrl(connection, m_currentPath);
     m_transferSource = localPath;
     m_transferDestination = m_currentUrl;
-
-    m_process = new QProcess(this);
-    m_process->setProgram(QStringLiteral("curl"));
-    QStringList args;
-    args << QStringLiteral("--show-error")
-         << QStringLiteral("--fail")
-         << QStringLiteral("--globoff")
-         << QStringLiteral("--progress-bar")
-         << QStringLiteral("--ftp-create-dirs")
-         << QStringLiteral("--location")
-         << QStringLiteral("--connect-timeout") << QStringLiteral("15")
-         << QStringLiteral("--max-time") << QStringLiteral("0");
-    addAuthenticationArguments(&args, connection);
-    args << QStringLiteral("--upload-file") << localPath << m_currentUrl;
-    m_process->setArguments(args);
-    m_process->setProcessChannelMode(QProcess::SeparateChannels);
-
-    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, &RemoteClient::onFinished);
-    connect(m_process, &QProcess::readyReadStandardError, this, &RemoteClient::readTransferProgress);
-    connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-        Q_UNUSED(error)
-        if (m_cancelled) {
-            return;
-        }
-        emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
-    });
+    m_authenticationMode = BasicAuthentication;
+    m_canRetryAnyAuth = isWebDavConnection(connection) && !connection.username.isEmpty();
 
     emit started(m_currentUrl);
     emit logMessage(tr("Uploading %1 to %2").arg(localPath, m_currentUrl));
-    m_process->start();
+    startCurrentOperation();
 }
 
 void RemoteClient::remove(const RemoteConnection &connection, const QString &remotePath, bool directory)
@@ -218,39 +122,14 @@ void RemoteClient::remove(const RemoteConnection &connection, const QString &rem
     m_operation = RemoveOperation;
     m_cancelled = false;
     m_removePath = normalizePath(remotePath);
+    m_removeDirectory = directory;
     m_currentUrl = buildUrl(connection, m_removePath);
-
-    m_process = new QProcess(this);
-    m_process->setProgram(QStringLiteral("curl"));
-    QStringList args;
-    args << QStringLiteral("--silent")
-         << QStringLiteral("--show-error")
-         << QStringLiteral("--fail")
-         << QStringLiteral("--globoff")
-         << QStringLiteral("--connect-timeout") << QStringLiteral("15")
-         << QStringLiteral("--max-time") << QStringLiteral("60");
-    addAuthenticationArguments(&args, connection);
-
-    const QString protocol = connection.protocol.toLower();
-    if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
-        args << QStringLiteral("--request") << QStringLiteral("DELETE") << m_currentUrl;
-    } else {
-        args << QStringLiteral("--quote") << QStringLiteral("%1 %2").arg(directory ? QStringLiteral("rmdir") : QStringLiteral("rm"), m_removePath)
-             << buildUrl(connection, QStringLiteral("/"));
-    }
-
-    m_process->setArguments(args);
-    m_process->setProcessChannelMode(QProcess::SeparateChannels);
-    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, &RemoteClient::onFinished);
-    connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-        Q_UNUSED(error)
-        emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
-    });
+    m_authenticationMode = BasicAuthentication;
+    m_canRetryAnyAuth = isWebDavConnection(connection) && !connection.username.isEmpty();
 
     emit started(m_currentUrl);
     emit logMessage(tr("Deleting %1").arg(m_currentUrl));
-    m_process->start();
+    startCurrentOperation();
 }
 
 void RemoteClient::move(const RemoteConnection &connection, const QString &remotePath, const QString &destinationPath)
@@ -266,44 +145,12 @@ void RemoteClient::move(const RemoteConnection &connection, const QString &remot
     m_moveSourcePath = normalizePath(remotePath);
     m_moveDestinationPath = normalizePath(destinationPath);
     m_currentUrl = buildUrl(connection, m_moveSourcePath);
-
-    m_process = new QProcess(this);
-    m_process->setProgram(QStringLiteral("curl"));
-    QStringList args;
-    args << QStringLiteral("--silent")
-         << QStringLiteral("--show-error")
-         << QStringLiteral("--fail")
-         << QStringLiteral("--globoff")
-         << QStringLiteral("--connect-timeout") << QStringLiteral("15")
-         << QStringLiteral("--max-time") << QStringLiteral("60");
-    addAuthenticationArguments(&args, connection);
-
-    const QString protocol = connection.protocol.toLower();
-    if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
-        args << QStringLiteral("--request") << QStringLiteral("MOVE")
-             << QStringLiteral("--header") << QStringLiteral("Destination: %1").arg(buildUrl(connection, m_moveDestinationPath))
-             << m_currentUrl;
-    } else if (protocol == QLatin1String("sftp")) {
-        args << QStringLiteral("--quote") << QStringLiteral("rename %1 %2").arg(m_moveSourcePath, m_moveDestinationPath)
-             << buildUrl(connection, QStringLiteral("/"));
-    } else {
-        args << QStringLiteral("--quote") << QStringLiteral("RNFR %1").arg(m_moveSourcePath)
-             << QStringLiteral("--quote") << QStringLiteral("RNTO %1").arg(m_moveDestinationPath)
-             << buildUrl(connection, QStringLiteral("/"));
-    }
-
-    m_process->setArguments(args);
-    m_process->setProcessChannelMode(QProcess::SeparateChannels);
-    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, &RemoteClient::onFinished);
-    connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
-        Q_UNUSED(error)
-        emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
-    });
+    m_authenticationMode = BasicAuthentication;
+    m_canRetryAnyAuth = isWebDavConnection(connection) && !connection.username.isEmpty();
 
     emit started(m_currentUrl);
     emit logMessage(tr("Moving %1 to %2").arg(m_moveSourcePath, m_moveDestinationPath));
-    m_process->start();
+    startCurrentOperation();
 }
 
 void RemoteClient::cancel()
@@ -314,6 +161,121 @@ void RemoteClient::cancel()
 
     m_cancelled = true;
     m_process->kill();
+}
+
+void RemoteClient::startCurrentOperation()
+{
+    QStringList args;
+    const QString protocol = m_connection.protocol.toLower();
+    const bool webDav = isWebDavConnection(m_connection);
+
+    switch (m_operation) {
+    case ListOperation:
+        args = curlArguments(m_connection, m_currentUrl, m_authenticationMode);
+        break;
+    case DownloadOperation:
+        args << QStringLiteral("--show-error")
+             << QStringLiteral("--fail")
+             << QStringLiteral("--globoff")
+             << QStringLiteral("--progress-bar")
+             << QStringLiteral("--ftp-create-dirs")
+             << QStringLiteral("--connect-timeout") << QStringLiteral("15")
+             << QStringLiteral("--max-time") << QStringLiteral("0");
+        addLocationArguments(&args, m_connection);
+        addAuthenticationArguments(&args, m_connection, m_authenticationMode);
+        if (m_resumeDownload) {
+            args << QStringLiteral("--continue-at") << QStringLiteral("-");
+        }
+        args << QStringLiteral("--output") << m_transferDestination << m_currentUrl;
+        break;
+    case MakeDirectoryOperation:
+        args << QStringLiteral("--silent")
+             << QStringLiteral("--show-error")
+             << QStringLiteral("--fail")
+             << QStringLiteral("--globoff")
+             << QStringLiteral("--connect-timeout") << QStringLiteral("15")
+             << QStringLiteral("--max-time") << QStringLiteral("60");
+        addLocationArguments(&args, m_connection);
+        addAuthenticationArguments(&args, m_connection, m_authenticationMode);
+        if (webDav) {
+            args << QStringLiteral("--request") << QStringLiteral("MKCOL") << m_currentUrl;
+        } else if (protocol == QLatin1String("sftp")) {
+            args << QStringLiteral("--quote") << QStringLiteral("mkdir %1").arg(m_directoryPath)
+                 << buildUrl(m_connection, QStringLiteral("/"));
+        } else {
+            args << QStringLiteral("--quote") << QStringLiteral("MKD %1").arg(m_directoryPath)
+                 << buildUrl(m_connection, QStringLiteral("/"));
+        }
+        break;
+    case UploadOperation:
+        args << QStringLiteral("--show-error")
+             << QStringLiteral("--fail")
+             << QStringLiteral("--globoff")
+             << QStringLiteral("--progress-bar")
+             << QStringLiteral("--ftp-create-dirs")
+             << QStringLiteral("--connect-timeout") << QStringLiteral("15")
+             << QStringLiteral("--max-time") << QStringLiteral("0");
+        addLocationArguments(&args, m_connection);
+        addAuthenticationArguments(&args, m_connection, m_authenticationMode);
+        args << QStringLiteral("--upload-file") << m_transferSource << m_currentUrl;
+        break;
+    case RemoveOperation:
+        args << QStringLiteral("--silent")
+             << QStringLiteral("--show-error")
+             << QStringLiteral("--fail")
+             << QStringLiteral("--globoff")
+             << QStringLiteral("--connect-timeout") << QStringLiteral("15")
+             << QStringLiteral("--max-time") << QStringLiteral("60");
+        addLocationArguments(&args, m_connection);
+        addAuthenticationArguments(&args, m_connection, m_authenticationMode);
+        if (webDav) {
+            args << QStringLiteral("--request") << QStringLiteral("DELETE") << m_currentUrl;
+        } else {
+            args << QStringLiteral("--quote") << QStringLiteral("%1 %2").arg(m_removeDirectory ? QStringLiteral("rmdir") : QStringLiteral("rm"), m_removePath)
+                 << buildUrl(m_connection, QStringLiteral("/"));
+        }
+        break;
+    case MoveOperation:
+        args << QStringLiteral("--silent")
+             << QStringLiteral("--show-error")
+             << QStringLiteral("--fail")
+             << QStringLiteral("--globoff")
+             << QStringLiteral("--connect-timeout") << QStringLiteral("15")
+             << QStringLiteral("--max-time") << QStringLiteral("60");
+        addLocationArguments(&args, m_connection);
+        addAuthenticationArguments(&args, m_connection, m_authenticationMode);
+        if (webDav) {
+            args << QStringLiteral("--request") << QStringLiteral("MOVE")
+                 << QStringLiteral("--header") << QStringLiteral("Destination: %1").arg(buildUrl(m_connection, m_moveDestinationPath))
+                 << m_currentUrl;
+        } else if (protocol == QLatin1String("sftp")) {
+            args << QStringLiteral("--quote") << QStringLiteral("rename %1 %2").arg(m_moveSourcePath, m_moveDestinationPath)
+                 << buildUrl(m_connection, QStringLiteral("/"));
+        } else {
+            args << QStringLiteral("--quote") << QStringLiteral("RNFR %1").arg(m_moveSourcePath)
+                 << QStringLiteral("--quote") << QStringLiteral("RNTO %1").arg(m_moveDestinationPath)
+                 << buildUrl(m_connection, QStringLiteral("/"));
+        }
+        break;
+    }
+
+    m_process = new QProcess(this);
+    m_process->setProgram(QStringLiteral("curl"));
+    m_process->setArguments(args);
+    m_process->setProcessChannelMode(QProcess::SeparateChannels);
+    connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, &RemoteClient::onFinished);
+    if (m_operation == DownloadOperation || m_operation == UploadOperation) {
+        connect(m_process, &QProcess::readyReadStandardError, this, &RemoteClient::readTransferProgress);
+    }
+    connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        Q_UNUSED(error)
+        if (m_cancelled) {
+            return;
+        }
+        emit failed(tr("Unable to start curl."), m_process ? m_process->errorString() : QString());
+    });
+    m_process->start();
 }
 
 void RemoteClient::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
@@ -329,6 +291,14 @@ void RemoteClient::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
         m_cancelled = false;
         emit cancelled();
         emit logMessage(tr("Transfer cancelled."));
+        return;
+    }
+
+    if (shouldRetryWithAnyAuth(exitCode, exitStatus, errorOutput)) {
+        m_authenticationMode = AnyAuthentication;
+        m_canRetryAnyAuth = false;
+        emit logMessage(tr("Basic authentication failed, retrying with negotiated authentication."));
+        startCurrentOperation();
         return;
     }
 
@@ -437,31 +407,57 @@ QString RemoteClient::joinPath(const QString &basePath, const QString &name) con
     return normalizePath(base + name);
 }
 
-void RemoteClient::addAuthenticationArguments(QStringList *args, const RemoteConnection &connection) const
+bool RemoteClient::isWebDavConnection(const RemoteConnection &connection) const
+{
+    const QString protocol = connection.protocol.toLower();
+    return protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs");
+}
+
+void RemoteClient::addLocationArguments(QStringList *args, const RemoteConnection &connection) const
+{
+    *args << (isWebDavConnection(connection) ? QStringLiteral("--location-trusted") : QStringLiteral("--location"));
+}
+
+void RemoteClient::addAuthenticationArguments(QStringList *args, const RemoteConnection &connection, AuthenticationMode mode) const
 {
     if (connection.username.isEmpty()) {
         return;
     }
 
-    const QString protocol = connection.protocol.toLower();
-    if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
-        *args << QStringLiteral("--anyauth");
+    if (isWebDavConnection(connection)) {
+        *args << (mode == BasicAuthentication ? QStringLiteral("--basic") : QStringLiteral("--anyauth"));
     }
     *args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
 }
 
-QStringList RemoteClient::curlArguments(const RemoteConnection &connection, const QString &url) const
+bool RemoteClient::shouldRetryWithAnyAuth(int exitCode, QProcess::ExitStatus exitStatus, const QByteArray &errorOutput) const
+{
+    if (!m_canRetryAnyAuth || m_authenticationMode != BasicAuthentication || !isWebDavConnection(m_connection)) {
+        return false;
+    }
+    if (exitStatus == QProcess::NormalExit && (exitCode == 22 || exitCode == 67)) {
+        return true;
+    }
+
+    const QString errorText = QString::fromLocal8Bit(errorOutput).toLower();
+    return errorText.contains(QStringLiteral("401"))
+        || errorText.contains(QStringLiteral("authentication"))
+        || errorText.contains(QStringLiteral("authenticate"))
+        || errorText.contains(QStringLiteral("unauthorized"));
+}
+
+QStringList RemoteClient::curlArguments(const RemoteConnection &connection, const QString &url, AuthenticationMode mode) const
 {
     QStringList args;
     args << QStringLiteral("--silent")
          << QStringLiteral("--show-error")
          << QStringLiteral("--fail")
          << QStringLiteral("--globoff")
-         << QStringLiteral("--location")
          << QStringLiteral("--connect-timeout") << QStringLiteral("15")
          << QStringLiteral("--max-time") << QStringLiteral("60");
+    addLocationArguments(&args, connection);
 
-    addAuthenticationArguments(&args, connection);
+    addAuthenticationArguments(&args, connection, mode);
 
     const QString protocol = connection.protocol.toLower();
     if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {

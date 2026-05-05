@@ -433,16 +433,20 @@ QWidget *MainWindow::createTransferPane()
     QVBoxLayout *layout = new QVBoxLayout(pane);
     layout->setContentsMargins(8, 8, 8, 8);
 
-    m_transferTabs = new QTabWidget(pane);
+    QSplitter *transferSplitter = new QSplitter(Qt::Vertical, pane);
+    transferSplitter->setChildrenCollapsible(false);
+    transferSplitter->setHandleWidth(8);
+
+    m_transferTabs = new QTabWidget(transferSplitter);
     m_transferTable = createTransferTable(m_transferTabs);
     m_completedTransferTable = createTransferTable(m_transferTabs);
     m_errorTransferTable = createTransferTable(m_transferTabs);
     m_transferTabs->addTab(m_transferTable, tr("Processing"));
     m_transferTabs->addTab(m_completedTransferTable, tr("Completed"));
     m_transferTabs->addTab(m_errorTransferTable, tr("Errors"));
-    layout->addWidget(m_transferTabs, 1);
+    transferSplitter->addWidget(m_transferTabs);
 
-    m_logGroup = new QGroupBox(tr("Log"), pane);
+    m_logGroup = new QGroupBox(tr("Log"), transferSplitter);
     m_logGroup->setCheckable(true);
     m_logGroup->setChecked(false);
     m_logGroup->setMaximumHeight(32);
@@ -454,11 +458,18 @@ QWidget *MainWindow::createTransferPane()
     m_log->setPlaceholderText(tr("Connection log"));
     m_log->setVisible(false);
     logLayout->addWidget(m_log);
-    connect(m_logGroup, &QGroupBox::toggled, this, [this](bool checked) {
+    transferSplitter->addWidget(m_logGroup);
+    transferSplitter->setStretchFactor(0, 4);
+    transferSplitter->setStretchFactor(1, 1);
+    transferSplitter->setSizes({4, 0});
+    connect(m_logGroup, &QGroupBox::toggled, this, [this, transferSplitter](bool checked) {
         m_log->setVisible(checked);
         m_logGroup->setMaximumHeight(checked ? QWIDGETSIZE_MAX : 32);
+        if (checked && transferSplitter->sizes().value(1) <= 32) {
+            transferSplitter->setSizes({3, 1});
+        }
     });
-    layout->addWidget(m_logGroup);
+    layout->addWidget(transferSplitter, 1);
     return pane;
 }
 

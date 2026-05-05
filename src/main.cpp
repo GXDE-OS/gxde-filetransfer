@@ -20,7 +20,7 @@ int main(int argc, char *argv[])
     DApplication app(argc, argv);
     app.setOrganizationName("gxde");
     app.setApplicationName("gxde-filetransfer");
-    app.setApplicationVersion("0.4");
+    app.setApplicationVersion("1.0.0");
     const QIcon appIcon(QStringLiteral(":/icons/gxde-filetransfer.svg"));
     app.setWindowIcon(appIcon);
     app.setProductIcon(appIcon);

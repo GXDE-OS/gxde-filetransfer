@@ -327,12 +327,15 @@ QWidget *MainWindow::createLocalPane()
     m_localStatusLabel = new QLabel(tr("Local"), pane);
     m_localPathEdit = new QLineEdit(QDir::homePath(), pane);
     m_localUpButton = new DPushButton(tr("Up"), pane);
+    m_localRefreshButton = new DPushButton(tr("Refresh"), pane);
     m_uploadButton = new DPushButton(tr("Upload >"), pane);
     m_localUpButton->setIcon(QIcon::fromTheme(QStringLiteral("go-up")));
+    m_localRefreshButton->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
     m_uploadButton->setIcon(QIcon::fromTheme(QStringLiteral("go-next")));
     tools->addWidget(m_localStatusLabel);
     tools->addWidget(m_localPathEdit, 1);
     tools->addWidget(m_localUpButton);
+    tools->addWidget(m_localRefreshButton);
     tools->addWidget(m_uploadButton);
 
     m_localView = new QTableWidget(0, 4, pane);
@@ -362,6 +365,7 @@ QWidget *MainWindow::createLocalPane()
     connect(m_localView, &QTableWidget::cellDoubleClicked, this, &MainWindow::openLocalEntry);
     connect(m_localPathEdit, &QLineEdit::returnPressed, this, &MainWindow::setLocalPathFromEdit);
     connect(m_localUpButton, &QPushButton::clicked, this, &MainWindow::goLocalUp);
+    connect(m_localRefreshButton, &QPushButton::clicked, this, &MainWindow::refreshLocal);
     connect(m_uploadButton, &QPushButton::clicked, this, &MainWindow::uploadSelected);
     connect(m_localView, &QTableWidget::customContextMenuRequested, this, &MainWindow::showLocalContextMenu);
     return pane;
@@ -764,6 +768,11 @@ void MainWindow::refreshRemote()
     connectToRemote();
 }
 
+void MainWindow::refreshLocal()
+{
+    loadLocalDirectory(m_localPathEdit->text());
+}
+
 void MainWindow::goRemoteUp()
 {
     m_remotePathEdit->setText(parentPath(m_remotePathEdit->text()));
@@ -1056,7 +1065,7 @@ void MainWindow::showTransferContextMenu(const QPoint &pos)
         cancelAction->setEnabled(hasSelection);
         menu.addSeparator();
     } else if (table == m_errorTransferTable) {
-        requeueAction = menu.addAction(tr("Requeue Selected"));
+        requeueAction = menu.addAction(tr("Requeue Selected Records"));
         requeueAction->setEnabled(hasSelection);
         menu.addSeparator();
     }
@@ -1424,13 +1433,12 @@ void MainWindow::showTransferFinished(const QString &source, const QString &dest
     setTransferBusy(false);
     updateFirstRunningTransfer(tr("Done"));
     if (m_lastTransferWasUpload) {
+        refreshRemoteIfReady();
         if (!m_pendingUploadDirectories.isEmpty() || !m_pendingUploadLocalPaths.isEmpty()) {
             startNextUpload();
-        } else {
-            refreshRemote();
         }
     } else {
-        loadLocalDirectory(m_localPathEdit->text());
+        refreshLocal();
         if (m_openDownloadedAfterTransfer) {
             QDesktopServices::openUrl(QUrl::fromLocalFile(destination));
         }
@@ -1468,8 +1476,10 @@ void MainWindow::showTransferCancelled()
     setTransferBusy(false);
     updateFirstRunningTransfer(tr("Cancelled"));
     if (m_lastTransferWasUpload) {
+        refreshRemoteIfReady();
         startNextUpload();
     } else {
+        refreshLocal();
         if (m_pendingDownloads.isEmpty()) {
             m_openDownloadedAfterTransfer = false;
         }
@@ -1517,6 +1527,11 @@ void MainWindow::showTransferError(const QString &message, const QString &detail
     m_pendingDownloadRows.clear();
     m_openDownloadedAfterTransfer = false;
     m_nextDownloadShouldOpen = false;
+    if (m_lastTransferWasUpload) {
+        refreshRemoteIfReady();
+    } else {
+        refreshLocal();
+    }
     const QString fullMessage = details.isEmpty() ? message : QStringLiteral("%1\n%2").arg(message, details);
     appendLog(fullMessage);
     showCopyableWarning(tr("Transfer error"), message, details);
@@ -1566,6 +1581,13 @@ void MainWindow::setLocalPathFromEdit()
         return;
     }
     loadLocalDirectory(path);
+}
+
+void MainWindow::refreshRemoteIfReady()
+{
+    if (!m_client->isBusy() && !m_hostEdit->text().trimmed().isEmpty()) {
+        refreshRemote();
+    }
 }
 
 QString MainWindow::parentPath(const QString &path) const
@@ -2187,6 +2209,7 @@ void MainWindow::startNextUpload()
         }
         m_lastTransferWasUpload = true;
         m_transferClient->makeDirectory(currentConnection(), remotePath);
+        refreshRemoteIfReady();
         return;
     }
 
@@ -2205,6 +2228,7 @@ void MainWindow::startNextUpload()
     }
     m_lastTransferWasUpload = true;
     m_transferClient->upload(currentConnection(), localPath, remotePath);
+    refreshRemoteIfReady();
 }
 
 void MainWindow::startNextDownload()
@@ -2244,6 +2268,7 @@ void MainWindow::startNextDownload()
     }
     m_lastTransferWasUpload = false;
     m_transferClient->download(currentConnection(), entry.path, localPath, resume);
+    refreshLocal();
 }
 
 void MainWindow::startNextRemoteDelete()
@@ -2300,6 +2325,7 @@ void MainWindow::setBrowsingBusy(bool busy)
     m_saveSiteButton->setEnabled(!busy);
     m_remoteRefreshButton->setEnabled(!busy);
     m_remoteUpButton->setEnabled(!busy);
+    m_localRefreshButton->setEnabled(true);
 }
 
 void MainWindow::setTransferBusy(bool busy)

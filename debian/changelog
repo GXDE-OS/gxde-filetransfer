@@ -1,3 +1,10 @@
+gxde-filetransfer (1.0.0) unstable; urgency=medium
+
+  * Add local refresh controls and refresh file lists during transfer changes.
+  * Improve failed transfer requeue translation.
+
+ -- GXDE Team <team@gxde.org>  Tue, 05 May 2026 00:00:00 +0000
+
 gxde-filetransfer (0.4) unstable; urgency=medium
 
   * Improve transfer queue handling for cancel, delete and retry actions.

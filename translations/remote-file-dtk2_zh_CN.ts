@@ -500,11 +500,15 @@
     </message>
     <message>
         <source>Requeue Selected</source>
-        <translation>重新加入任务队列</translation>
+        <translation type="vanished">重新加入任务队列</translation>
     </message>
     <message>
         <source>Queued</source>
         <translation>已排队</translation>
+    </message>
+    <message>
+        <source>Requeue Selected Records</source>
+        <translation>重新加入任务队列</translation>
     </message>
 </context>
 <context>

@@ -28,6 +28,7 @@ public:
 private slots:
     void connectToRemote();
     void refreshRemote();
+    void refreshLocal();
     void goRemoteUp();
     void goLocalUp();
     void openRemoteEntry(int row, int column);
@@ -72,6 +73,7 @@ private:
     QString remoteFileName(const QString &path) const;
     QString humanReadableSize(qint64 size) const;
     void loadLocalDirectory(const QString &path);
+    void refreshRemoteIfReady();
     QStringList selectedLocalPaths() const;
     QVector<RemoteEntry> selectedRemoteEntries() const;
     bool uploadPath(const QString &localPath, const QString &remoteBasePath);
@@ -131,6 +133,7 @@ private:
     QPushButton *m_saveSiteButton = nullptr;
     QPushButton *m_uploadButton = nullptr;
     QPushButton *m_downloadButton = nullptr;
+    QPushButton *m_localRefreshButton = nullptr;
     QPushButton *m_remoteRefreshButton = nullptr;
     QPushButton *m_remoteUpButton = nullptr;
     QPushButton *m_localUpButton = nullptr;

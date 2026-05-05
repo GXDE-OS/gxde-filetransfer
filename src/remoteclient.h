@@ -74,6 +74,9 @@ private:
     QString buildUrl(const RemoteConnection &connection, const QString &path) const;
     QString normalizePath(const QString &path) const;
     QString joinPath(const QString &basePath, const QString &name) const;
+    QString authenticationModeName() const;
+    QString sanitizedArguments(const QStringList &args) const;
+    QString operationDebugDetails(int exitCode, QProcess::ExitStatus exitStatus, const QByteArray &errorOutput) const;
     bool isWebDavConnection(const RemoteConnection &connection) const;
     void addLocationArguments(QStringList *args, const RemoteConnection &connection) const;
     void addAuthenticationArguments(QStringList *args, const RemoteConnection &connection, AuthenticationMode mode) const;
@@ -99,5 +102,7 @@ private:
     bool m_resumeDownload = false;
     AuthenticationMode m_authenticationMode = BasicAuthentication;
     bool m_canRetryAnyAuth = false;
+    QStringList m_lastCurlArguments;
+    QByteArray m_errorBuffer;
     bool m_cancelled = false;
 };

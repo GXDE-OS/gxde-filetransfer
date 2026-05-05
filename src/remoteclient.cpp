@@ -262,6 +262,8 @@ void RemoteClient::startCurrentOperation()
     m_process = new QProcess(this);
     m_process->setProgram(QStringLiteral("curl"));
     m_process->setArguments(args);
+    m_lastCurlArguments = args;
+    m_errorBuffer.clear();
     m_process->setProcessChannelMode(QProcess::SeparateChannels);
     connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &RemoteClient::onFinished);
@@ -282,7 +284,7 @@ void RemoteClient::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
 {
     QProcess *process = m_process;
     const QByteArray output = process->readAllStandardOutput();
-    const QByteArray errorOutput = process->readAllStandardError();
+    const QByteArray errorOutput = m_errorBuffer + process->readAllStandardError();
 
     process->deleteLater();
     m_process = nullptr;
@@ -311,7 +313,7 @@ void RemoteClient::onFinished(int exitCode, QProcess::ExitStatus exitStatus)
 
     if (exitStatus != QProcess::NormalExit || exitCode != 0) {
         emit failed(m_operation == ListOperation ? tr("Remote listing failed.") : tr("Remote operation failed."),
-                    QString::fromLocal8Bit(errorOutput).trimmed());
+                    operationDebugDetails(exitCode, exitStatus, errorOutput));
         return;
     }
 
@@ -345,7 +347,9 @@ void RemoteClient::readTransferProgress()
         return;
     }
 
-    const QString text = QString::fromLocal8Bit(m_process->readAllStandardError());
+    const QByteArray data = m_process->readAllStandardError();
+    m_errorBuffer += data;
+    const QString text = QString::fromLocal8Bit(data);
     const QRegularExpression percentPattern(QStringLiteral("(\\d{1,3}(?:\\.\\d+)?)%"));
     QRegularExpressionMatchIterator it = percentPattern.globalMatch(text);
     int lastPercent = -1;
@@ -405,6 +409,46 @@ QString RemoteClient::joinPath(const QString &basePath, const QString &name) con
         base.append(QLatin1Char('/'));
     }
     return normalizePath(base + name);
+}
+
+QString RemoteClient::authenticationModeName() const
+{
+    return m_authenticationMode == BasicAuthentication ? QStringLiteral("basic") : QStringLiteral("anyauth");
+}
+
+QString RemoteClient::sanitizedArguments(const QStringList &args) const
+{
+    QStringList sanitized;
+    bool redactNext = false;
+    for (const QString &arg : args) {
+        if (redactNext) {
+            sanitized << QStringLiteral("<redacted>");
+            redactNext = false;
+            continue;
+        }
+        sanitized << arg;
+        if (arg == QLatin1String("--user")) {
+            redactNext = true;
+        }
+    }
+    return sanitized.join(QLatin1Char(' '));
+}
+
+QString RemoteClient::operationDebugDetails(int exitCode, QProcess::ExitStatus exitStatus, const QByteArray &errorOutput) const
+{
+    QStringList details;
+    details << tr("URL: %1").arg(m_currentUrl)
+            << tr("Protocol: %1").arg(m_connection.protocol)
+            << tr("Authentication: %1").arg(authenticationModeName())
+            << tr("Exit code: %1").arg(exitCode)
+            << tr("Exit status: %1").arg(exitStatus == QProcess::NormalExit ? QStringLiteral("normal") : QStringLiteral("crashed"))
+            << tr("Curl arguments: curl %1").arg(sanitizedArguments(m_lastCurlArguments));
+
+    const QString stderrText = QString::fromLocal8Bit(errorOutput).trimmed();
+    if (!stderrText.isEmpty()) {
+        details << tr("Curl stderr:") << stderrText;
+    }
+    return details.join(QLatin1Char('\n'));
 }
 
 bool RemoteClient::isWebDavConnection(const RemoteConnection &connection) const

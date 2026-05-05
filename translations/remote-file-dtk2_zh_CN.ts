@@ -580,5 +580,37 @@
         <source>Moved %1 to %2</source>
         <translation>已移动 %1 到 %2</translation>
     </message>
+    <message>
+        <source>Basic authentication failed, retrying with negotiated authentication.</source>
+        <translation>Basic 认证失败，正在改用协商认证重试。</translation>
+    </message>
+    <message>
+        <source>URL: %1</source>
+        <translation>URL：%1</translation>
+    </message>
+    <message>
+        <source>Protocol: %1</source>
+        <translation>协议：%1</translation>
+    </message>
+    <message>
+        <source>Authentication: %1</source>
+        <translation>认证方式：%1</translation>
+    </message>
+    <message>
+        <source>Exit code: %1</source>
+        <translation>退出码：%1</translation>
+    </message>
+    <message>
+        <source>Exit status: %1</source>
+        <translation>退出状态：%1</translation>
+    </message>
+    <message>
+        <source>Curl arguments: curl %1</source>
+        <translation>Curl 参数：curl %1</translation>
+    </message>
+    <message>
+        <source>Curl stderr:</source>
+        <translation>Curl 错误输出：</translation>
+    </message>
 </context>
 </TS>

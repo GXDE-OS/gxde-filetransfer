@@ -14,6 +14,7 @@
 #include <QVector>
 
 class QComboBox;
+class QGroupBox;
 class QSpinBox;
 class QTabWidget;
 
@@ -130,6 +131,7 @@ private:
     QTableWidget *m_completedTransferTable = nullptr;
     QTableWidget *m_errorTransferTable = nullptr;
     QTabWidget *m_transferTabs = nullptr;
+    QGroupBox *m_logGroup = nullptr;
     QPlainTextEdit *m_log = nullptr;
     QTableWidget *m_localView = nullptr;
     RemoteClient *m_client = nullptr;

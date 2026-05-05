@@ -305,26 +305,8 @@ QWidget *MainWindow::createBrowser()
     files->setHandleWidth(8);
     files->setSizes({3, 2});
 
-    QSplitter *bottom = new QSplitter(Qt::Horizontal, vertical);
-    bottom->addWidget(createTransferPane());
-
-    QGroupBox *logGroup = new QGroupBox(tr("Log"), bottom);
-    QVBoxLayout *logLayout = new QVBoxLayout(logGroup);
-    logLayout->setContentsMargins(8, 8, 8, 8);
-    m_log = new QPlainTextEdit(logGroup);
-    m_log->setReadOnly(true);
-    m_log->setMaximumBlockCount(500);
-    m_log->setPlaceholderText(tr("Connection log"));
-    logLayout->addWidget(m_log);
-    bottom->addWidget(logGroup);
-    bottom->setStretchFactor(0, 3);
-    bottom->setStretchFactor(1, 2);
-    bottom->setChildrenCollapsible(false);
-    bottom->setHandleWidth(8);
-    bottom->setSizes({3, 2});
-
     vertical->addWidget(files);
-    vertical->addWidget(bottom);
+    vertical->addWidget(createTransferPane());
     vertical->setChildrenCollapsible(false);
     vertical->setHandleWidth(8);
     vertical->setStretchFactor(0, 4);
@@ -457,7 +439,25 @@ QWidget *MainWindow::createTransferPane()
     m_transferTabs->addTab(m_transferTable, tr("Processing"));
     m_transferTabs->addTab(m_completedTransferTable, tr("Completed"));
     m_transferTabs->addTab(m_errorTransferTable, tr("Errors"));
-    layout->addWidget(m_transferTabs);
+    layout->addWidget(m_transferTabs, 1);
+
+    m_logGroup = new QGroupBox(tr("Log"), pane);
+    m_logGroup->setCheckable(true);
+    m_logGroup->setChecked(false);
+    m_logGroup->setMaximumHeight(32);
+    QVBoxLayout *logLayout = new QVBoxLayout(m_logGroup);
+    logLayout->setContentsMargins(8, 8, 8, 8);
+    m_log = new QPlainTextEdit(m_logGroup);
+    m_log->setReadOnly(true);
+    m_log->setMaximumBlockCount(1000);
+    m_log->setPlaceholderText(tr("Connection log"));
+    m_log->setVisible(false);
+    logLayout->addWidget(m_log);
+    connect(m_logGroup, &QGroupBox::toggled, this, [this](bool checked) {
+        m_log->setVisible(checked);
+        m_logGroup->setMaximumHeight(checked ? QWIDGETSIZE_MAX : 32);
+    });
+    layout->addWidget(m_logGroup);
     return pane;
 }
 

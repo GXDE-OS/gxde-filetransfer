@@ -78,6 +78,7 @@ private:
     QString sanitizedArguments(const QStringList &args) const;
     QString operationDebugDetails(int exitCode, QProcess::ExitStatus exitStatus, const QByteArray &errorOutput) const;
     bool isWebDavConnection(const RemoteConnection &connection) const;
+    void addDiagnosticsArguments(QStringList *args) const;
     void addLocationArguments(QStringList *args, const RemoteConnection &connection) const;
     void addAuthenticationArguments(QStringList *args, const RemoteConnection &connection, AuthenticationMode mode) const;
     bool shouldRetryWithAnyAuth(int exitCode, QProcess::ExitStatus exitStatus, const QByteArray &errorOutput) const;

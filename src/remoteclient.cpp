@@ -261,6 +261,7 @@ void RemoteClient::startCurrentOperation()
 
     m_process = new QProcess(this);
     m_process->setProgram(QStringLiteral("curl"));
+    addDiagnosticsArguments(&args);
     m_process->setArguments(args);
     m_lastCurlArguments = args;
     m_errorBuffer.clear();
@@ -455,6 +456,12 @@ bool RemoteClient::isWebDavConnection(const RemoteConnection &connection) const
 {
     const QString protocol = connection.protocol.toLower();
     return protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs");
+}
+
+void RemoteClient::addDiagnosticsArguments(QStringList *args) const
+{
+    args->append(QStringLiteral("--write-out"));
+    args->append(QStringLiteral("%{stderr}\nCurl diagnostics: http_code=%{http_code} url_effective=%{url_effective} redirect_url=%{redirect_url} content_type=%{content_type} size_download=%{size_download} size_upload=%{size_upload} time_total=%{time_total}\n"));
 }
 
 void RemoteClient::addLocationArguments(QStringList *args, const RemoteConnection &connection) const

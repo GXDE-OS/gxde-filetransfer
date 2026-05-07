@@ -1,3 +1,9 @@
+gxde-filetransfer (1.1.0) unstable; urgency=medium
+
+  * Add FTPS, SMB and SMBS protocol choices backed by curl.
+
+ -- GXDE Team <team@gxde.org>  Tue, 05 May 2026 00:00:00 +0000
+
 gxde-filetransfer (1.0.1) unstable; urgency=medium
 
   * Allow upload tasks to queue while transfers are running.

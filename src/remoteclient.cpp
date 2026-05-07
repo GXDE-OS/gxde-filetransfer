@@ -487,6 +487,12 @@ bool RemoteClient::isWebDavConnection(const RemoteConnection &connection) const
     return protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs");
 }
 
+bool RemoteClient::isSmbConnection(const RemoteConnection &connection) const
+{
+    const QString protocol = connection.protocol.toLower();
+    return protocol == QLatin1String("smb") || protocol == QLatin1String("smbs");
+}
+
 void RemoteClient::addDiagnosticsArguments(QStringList *args) const
 {
     args->append(QStringLiteral("--write-out"));
@@ -506,6 +512,8 @@ void RemoteClient::addAuthenticationArguments(QStringList *args, const RemoteCon
 
     if (isWebDavConnection(connection)) {
         *args << (mode == BasicAuthentication ? QStringLiteral("--basic") : QStringLiteral("--anyauth"));
+    } else if (isSmbConnection(connection)) {
+        *args << QStringLiteral("--ntlm");
     }
     *args << QStringLiteral("--user") << QStringLiteral("%1:%2").arg(connection.username, connection.password);
 }
@@ -558,6 +566,9 @@ QVector<RemoteEntry> RemoteClient::parseDirectoryListing(const QString &protocol
     if (normalizedProtocol == QLatin1String("webdav") || normalizedProtocol == QLatin1String("webdavs")) {
         return parseWebDavListing(path, data);
     }
+    if (normalizedProtocol == QLatin1String("smb") || normalizedProtocol == QLatin1String("smbs")) {
+        return parseSmbListing(path, QString::fromUtf8(data));
+    }
 
     return parseUnixListing(path, QString::fromUtf8(data));
 }
@@ -593,6 +604,52 @@ QVector<RemoteEntry> RemoteClient::parseUnixListing(const QString &path, const Q
             continue;
         }
 
+        entry.path = joinPath(path, entry.name);
+        if (entry.directory && !entry.path.endsWith(QLatin1Char('/'))) {
+            entry.path.append(QLatin1Char('/'));
+        }
+        entries.append(entry);
+    }
+
+    return entries;
+}
+
+QVector<RemoteEntry> RemoteClient::parseSmbListing(const QString &path, const QString &text) const
+{
+    QVector<RemoteEntry> entries = parseUnixListing(path, text);
+    if (!entries.isEmpty()) {
+        return entries;
+    }
+
+    QTextStream stream(const_cast<QString *>(&text), QIODevice::ReadOnly);
+    const QRegularExpression smbClientLine(QStringLiteral("^(.+?)\\s+([A-Z]+)\\s+(\\d+)\\s+(.+)$"));
+
+    while (!stream.atEnd()) {
+        const QString line = stream.readLine().trimmed();
+        if (line.isEmpty()
+            || line == QLatin1String(".")
+            || line == QLatin1String("..")
+            || line.startsWith(QStringLiteral("Domain="))
+            || line.contains(QStringLiteral("blocks of size"))) {
+            continue;
+        }
+
+        RemoteEntry entry;
+        const QRegularExpressionMatch match = smbClientLine.match(line);
+        if (match.hasMatch()) {
+            entry.name = match.captured(1).trimmed();
+            entry.directory = match.captured(2).contains(QLatin1Char('D'));
+            entry.size = entry.directory ? -1 : match.captured(3).toLongLong();
+            entry.modified = match.captured(4).trimmed();
+        } else {
+            entry.name = line;
+            entry.directory = true;
+            entry.size = -1;
+        }
+
+        if (entry.name == QLatin1String(".") || entry.name == QLatin1String("..")) {
+            continue;
+        }
         entry.path = joinPath(path, entry.name);
         if (entry.directory && !entry.path.endsWith(QLatin1Char('/'))) {
             entry.path.append(QLatin1Char('/'));

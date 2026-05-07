@@ -139,7 +139,53 @@ QString protocolDisplayName(const QString &protocol)
     if (normalized == QLatin1String("webdavs")) {
         return QStringLiteral("WebDAVS");
     }
+    if (normalized == QLatin1String("ftps")) {
+        return QStringLiteral("FTPS");
+    }
+    if (normalized == QLatin1String("smb")) {
+        return QStringLiteral("SMB");
+    }
+    if (normalized == QLatin1String("smbs")) {
+        return QStringLiteral("SMBS");
+    }
     return normalized.toUpper();
+}
+
+QStringList supportedProtocolNames()
+{
+    return {QStringLiteral("FTP"), QStringLiteral("FTPS"), QStringLiteral("SFTP"),
+            QStringLiteral("WebDAV"), QStringLiteral("WebDAVS"),
+            QStringLiteral("SMB"), QStringLiteral("SMBS")};
+}
+
+int defaultPortForProtocol(const QString &protocol)
+{
+    const QString normalized = protocol.toLower();
+    if (normalized == QLatin1String("ftp")) {
+        return 21;
+    }
+    if (normalized == QLatin1String("ftps")) {
+        return 990;
+    }
+    if (normalized == QLatin1String("sftp")) {
+        return 22;
+    }
+    if (normalized == QLatin1String("webdavs")) {
+        return 443;
+    }
+    if (normalized == QLatin1String("smb") || normalized == QLatin1String("smbs")) {
+        return 445;
+    }
+    return 80;
+}
+
+QString defaultPathForProtocol(const QString &protocol)
+{
+    const QString normalized = protocol.toLower();
+    if (normalized == QLatin1String("ftp") || normalized == QLatin1String("ftps") || normalized == QLatin1String("sftp")) {
+        return QStringLiteral("~");
+    }
+    return QStringLiteral("/");
 }
 
 QIcon themedIcon(const QString &iconName, const QString &fallbackName = QStringLiteral("text-x-generic"))
@@ -259,7 +305,7 @@ QWidget *MainWindow::createConnectionBar()
     m_siteCombo = new QComboBox(bar);
     m_siteCombo->setMinimumWidth(160);
     m_protocolCombo = new QComboBox(bar);
-    m_protocolCombo->addItems({QStringLiteral("FTP"), QStringLiteral("SFTP"), QStringLiteral("WebDAV"), QStringLiteral("WebDAVS")});
+    m_protocolCombo->addItems(supportedProtocolNames());
     m_hostEdit = new QLineEdit(bar);
     m_hostEdit->setPlaceholderText(tr("Host"));
     m_portSpin = new QSpinBox(bar);
@@ -754,11 +800,7 @@ void MainWindow::connectToRemote()
     QString path = m_remotePathEdit->text();
     const QString protocol = m_protocolCombo->currentText().toLower();
     if (path.isEmpty()) {
-        if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
-            path = QStringLiteral("/");
-        } else if (protocol == QLatin1String("ftp") || protocol == QLatin1String("sftp")) {
-            path = QStringLiteral("~");
-        }
+        path = defaultPathForProtocol(protocol);
     }
     m_client->list(currentConnection(), path);
 }
@@ -1145,7 +1187,7 @@ void MainWindow::showSavedSitesDialog()
     QVBoxLayout *detailsLayout = new QVBoxLayout(detailsGroup);
     QFormLayout *form = new QFormLayout;
     QComboBox *protocolCombo = new QComboBox(detailsGroup);
-    protocolCombo->addItems({QStringLiteral("FTP"), QStringLiteral("SFTP"), QStringLiteral("WebDAV"), QStringLiteral("WebDAVS")});
+    protocolCombo->addItems(supportedProtocolNames());
     QLineEdit *hostEdit = new QLineEdit(detailsGroup);
     QSpinBox *portSpin = new QSpinBox(detailsGroup);
     portSpin->setRange(0, 65535);
@@ -1183,33 +1225,15 @@ void MainWindow::showSavedSitesDialog()
 
     dialog.addContent(central, Qt::AlignCenter);
 
-    auto defaultPort = [](const QString &protocol) {
-        const QString normalized = protocol.toLower();
-        if (normalized == QLatin1String("ftp")) {
-            return 21;
-        }
-        if (normalized == QLatin1String("sftp")) {
-            return 22;
-        }
-        if (normalized == QLatin1String("webdavs")) {
-            return 443;
-        }
-        return 80;
-    };
-
-    auto defaultPath = [](const QString &protocol) {
-        return protocol.toLower() == QLatin1String("sftp") ? QStringLiteral("~") : QStringLiteral("/");
-    };
-
     auto clearForm = [=]() {
         list->clearSelection();
         list->setCurrentRow(-1);
         protocolCombo->setCurrentText(QStringLiteral("FTP"));
         hostEdit->clear();
-        portSpin->setValue(defaultPort(protocolCombo->currentText()));
+        portSpin->setValue(defaultPortForProtocol(protocolCombo->currentText()));
         userEdit->clear();
         passwordEdit->clear();
-        pathEdit->setText(defaultPath(protocolCombo->currentText()));
+        pathEdit->setText(defaultPathForProtocol(protocolCombo->currentText()));
         loadButton->setEnabled(false);
         deleteButton->setEnabled(false);
     };
@@ -1221,7 +1245,7 @@ void MainWindow::showSavedSitesDialog()
         connection.port = portSpin->value();
         connection.username = userEdit->text();
         connection.password = passwordEdit->text();
-        connection.path = pathEdit->text().trimmed().isEmpty() ? defaultPath(connection.protocol) : pathEdit->text().trimmed();
+        connection.path = pathEdit->text().trimmed().isEmpty() ? defaultPathForProtocol(connection.protocol) : pathEdit->text().trimmed();
         return connection;
     };
 
@@ -1263,10 +1287,10 @@ void MainWindow::showSavedSitesDialog()
     };
 
     connect(protocolCombo, &QComboBox::currentTextChanged, &dialog, [=](const QString &protocol) {
-        const QString oldDefaultPath = protocol.toLower() == QLatin1String("sftp") ? QStringLiteral("/") : QStringLiteral("~");
-        portSpin->setValue(defaultPort(protocol));
-        if (pathEdit->text().trimmed().isEmpty() || pathEdit->text().trimmed() == oldDefaultPath) {
-            pathEdit->setText(defaultPath(protocol));
+        const QString path = pathEdit->text().trimmed();
+        portSpin->setValue(defaultPortForProtocol(protocol));
+        if (path.isEmpty() || path == QLatin1String("/") || path == QLatin1String("~")) {
+            pathEdit->setText(defaultPathForProtocol(protocol));
         }
     });
     connect(list, &QListWidget::currentRowChanged, &dialog, updateDetails);
@@ -1550,26 +1574,12 @@ void MainWindow::showError(const QString &message, const QString &details)
 
 void MainWindow::updateDefaultPort()
 {
-    const QString protocol = m_protocolCombo->currentText().toLower();
-    if (protocol == QLatin1String("ftp")) {
-        m_portSpin->setValue(21);
-    } else if (protocol == QLatin1String("sftp")) {
-        m_portSpin->setValue(22);
-    } else if (protocol == QLatin1String("webdavs")) {
-        m_portSpin->setValue(443);
-    } else {
-        m_portSpin->setValue(80);
-    }
+    const QString protocol = m_protocolCombo->currentText();
+    m_portSpin->setValue(defaultPortForProtocol(protocol));
 
     const QString path = m_remotePathEdit->text().trimmed();
-    if (protocol == QLatin1String("sftp")) {
-        if (path.isEmpty() || path == QLatin1String("/")) {
-            m_remotePathEdit->setText(QStringLiteral("~"));
-        }
-    } else if (protocol == QLatin1String("webdav") || protocol == QLatin1String("webdavs")) {
-        if (path.isEmpty() || path == QLatin1String("~")) {
-            m_remotePathEdit->setText(QStringLiteral("/"));
-        }
+    if (path.isEmpty() || path == QLatin1String("/") || path == QLatin1String("~")) {
+        m_remotePathEdit->setText(defaultPathForProtocol(protocol));
     }
 }
 

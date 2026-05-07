@@ -80,6 +80,7 @@ private:
     QString operationDebugDetails(int exitCode, QProcess::ExitStatus exitStatus, const QByteArray &errorOutput) const;
     QString curlSpeedText(const QString &speed) const;
     bool isWebDavConnection(const RemoteConnection &connection) const;
+    bool isSmbConnection(const RemoteConnection &connection) const;
     void addDiagnosticsArguments(QStringList *args) const;
     void addLocationArguments(QStringList *args, const RemoteConnection &connection) const;
     void addAuthenticationArguments(QStringList *args, const RemoteConnection &connection, AuthenticationMode mode) const;
@@ -87,6 +88,7 @@ private:
     QStringList curlArguments(const RemoteConnection &connection, const QString &url, AuthenticationMode mode) const;
     QVector<RemoteEntry> parseDirectoryListing(const QString &protocol, const QString &path, const QByteArray &data) const;
     QVector<RemoteEntry> parseUnixListing(const QString &path, const QString &text) const;
+    QVector<RemoteEntry> parseSmbListing(const QString &path, const QString &text) const;
     QVector<RemoteEntry> parseWebDavListing(const QString &path, const QByteArray &data) const;
     QString displayNameFromHref(const QString &href) const;
 

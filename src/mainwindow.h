@@ -38,6 +38,8 @@ private slots:
     void downloadSelected();
     void deleteSelectedLocal();
     void deleteSelectedRemote();
+    void createLocalFolder();
+    void createRemoteFolder();
     void openLocalFile();
     void cancelSelectedTransfer();
     void showLocalContextMenu(const QPoint &pos);
@@ -167,6 +169,7 @@ private:
     bool m_lastTransferWasUpload = false;
     bool m_nextDownloadShouldOpen = false;
     bool m_openDownloadedAfterTransfer = false;
+    bool m_creatingRemoteFolder = false;
     int m_activeTransferRow = -1;
     qint64 m_activeTransferTotalBytes = -1;
     qint64 m_lastTransferBytes = 0;

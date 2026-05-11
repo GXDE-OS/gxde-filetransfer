@@ -491,6 +491,30 @@
         <translation>创建文件夹</translation>
     </message>
     <message>
+        <source>New Folder</source>
+        <translation>新建文件夹</translation>
+    </message>
+    <message>
+        <source>Folder name:</source>
+        <translation>文件夹名称：</translation>
+    </message>
+    <message>
+        <source>A file or folder with that name already exists.</source>
+        <translation>该名称的文件或文件夹已存在。</translation>
+    </message>
+    <message>
+        <source>Unable to create folder.</source>
+        <translation>无法创建文件夹。</translation>
+    </message>
+    <message>
+        <source>Not connected</source>
+        <translation>未连接</translation>
+    </message>
+    <message>
+        <source>Please connect to a remote host first.</source>
+        <translation>请先连接到远程主机。</translation>
+    </message>
+    <message>
         <source>Speed</source>
         <translation>速度</translation>
     </message>

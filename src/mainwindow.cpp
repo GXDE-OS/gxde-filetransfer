@@ -24,6 +24,7 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QHash>
+#include <QInputDialog>
 #include <QIcon>
 #include <QKeyEvent>
 #include <QListWidget>
@@ -954,6 +955,44 @@ void MainWindow::deleteSelectedRemote()
     startNextRemoteDelete();
 }
 
+void MainWindow::createLocalFolder()
+{
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("New Folder"), tr("Folder name:"), QLineEdit::Normal, QString(), &ok);
+    if (!ok || name.isEmpty()) {
+        return;
+    }
+    const QString folderPath = QDir(m_localPathEdit->text()).filePath(name);
+    if (QDir().exists(folderPath)) {
+        QMessageBox::warning(this, tr("New Folder"), tr("A file or folder with that name already exists."));
+        return;
+    }
+    if (!QDir().mkpath(folderPath)) {
+        QMessageBox::warning(this, tr("New Folder"), tr("Unable to create folder."));
+        return;
+    }
+    loadLocalDirectory(m_localPathEdit->text());
+}
+
+void MainWindow::createRemoteFolder()
+{
+    if (m_hostEdit->text().trimmed().isEmpty()) {
+        QMessageBox::warning(this, tr("Not connected"), tr("Please connect to a remote host first."));
+        return;
+    }
+    if (m_client->isBusy()) {
+        return;
+    }
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("New Folder"), tr("Folder name:"), QLineEdit::Normal, QString(), &ok);
+    if (!ok || name.isEmpty()) {
+        return;
+    }
+    const QString remotePath = joinRemotePath(m_remotePathEdit->text(), name);
+    m_creatingRemoteFolder = true;
+    m_client->makeDirectory(currentConnection(), remotePath);
+}
+
 void MainWindow::openLocalFile()
 {
     const QString path = selectedLocalPath();
@@ -994,6 +1033,9 @@ void MainWindow::showLocalContextMenu(const QPoint &pos)
     QAction *deleteAction = menu.addAction(tr("Delete"));
     deleteAction->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
     menu.addSeparator();
+    QAction *newFolderAction = menu.addAction(tr("New Folder"));
+    newFolderAction->setIcon(QIcon::fromTheme(QStringLiteral("folder-new")));
+    menu.addSeparator();
     QAction *refreshAction = menu.addAction(tr("Refresh"));
     refreshAction->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
     openAction->setEnabled(hasSelection);
@@ -1012,6 +1054,8 @@ void MainWindow::showLocalContextMenu(const QPoint &pos)
         uploadSelected();
     } else if (chosen == deleteAction) {
         deleteSelectedLocal();
+    } else if (chosen == newFolderAction) {
+        createLocalFolder();
     } else if (chosen == refreshAction) {
         loadLocalDirectory(m_localPathEdit->text());
     }
@@ -1044,6 +1088,10 @@ void MainWindow::showRemoteContextMenu(const QPoint &pos)
         deleteAction->setIcon(QIcon::fromTheme(QStringLiteral("edit-delete")));
         menu.addSeparator();
     }
+    QAction *newFolderAction = menu.addAction(tr("New Folder"));
+    newFolderAction->setIcon(QIcon::fromTheme(QStringLiteral("folder-new")));
+    newFolderAction->setEnabled(!m_client->isBusy());
+    menu.addSeparator();
     QAction *refreshAction = menu.addAction(tr("Refresh"));
     refreshAction->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
     QAction *upAction = menu.addAction(tr("Go Up"));
@@ -1074,6 +1122,8 @@ void MainWindow::showRemoteContextMenu(const QPoint &pos)
         calculateRemoteDirectorySize(row);
     } else if (chosen == deleteAction) {
         deleteSelectedRemote();
+    } else if (chosen == newFolderAction) {
+        createRemoteFolder();
     } else if (chosen == refreshAction) {
         refreshRemote();
     } else if (chosen == upAction) {
@@ -1454,6 +1504,12 @@ void MainWindow::showTransferFinished(const QString &source, const QString &dest
 {
     Q_UNUSED(source)
     Q_UNUSED(destination)
+    if (m_creatingRemoteFolder) {
+        m_creatingRemoteFolder = false;
+        setBrowsingBusy(false);
+        refreshRemote();
+        return;
+    }
     setTransferBusy(false);
     updateFirstRunningTransfer(tr("Done"));
     if (m_lastTransferWasUpload) {
@@ -1563,6 +1619,7 @@ void MainWindow::showTransferError(const QString &message, const QString &detail
 
 void MainWindow::showError(const QString &message, const QString &details)
 {
+    m_creatingRemoteFolder = false;
     setBrowsingBusy(false);
     setTransferBusy(false);
     updateFirstRunningTransfer(tr("Failed"));

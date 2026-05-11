@@ -1,3 +1,9 @@
+gxde-filetransfer (1.2.0) unstable; urgency=medium
+
+  * Add "New Folder" context-menu option for local and remote file lists.
+
+ -- GXDE Team <team@gxde.org>  Mon, 11 May 2026 00:00:00 +0000
+
 gxde-filetransfer (1.1.0) unstable; urgency=medium
 
   * Add FTPS, SMB and SMBS protocol choices backed by curl.

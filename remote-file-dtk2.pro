@@ -1,7 +1,7 @@
 QT += core gui widgets network xml
 
 CONFIG += c++11 link_pkgconfig
-PKGCONFIG += dtkwidget dtkcore
+PKGCONFIG += dtk2widget dtk6core
 
 TARGET = gxde-filetransfer
 TEMPLATE = app

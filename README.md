@@ -18,7 +18,7 @@ Chinese documentation is available in [README.zh.md](README.zh.md).
 ## Build
 
 ```bash
-qmake remote-file-dtk2.pro
+qmake6 remote-file-dtk2.pro
 make -j$(nproc)
 ```
 
@@ -38,8 +38,8 @@ The generated Debian packages are written to the parent directory.
 
 ## Dependencies
 
-- Qt 5 Widgets, Network and XML modules.
-- DTK Widget/Core development libraries.
+- Qt 6 Widgets, Network and XML modules.
+- DTK 2 Widget / DTK 6 Core development libraries (Qt 6 ports).
 - `curl` for remote protocol operations.
 
 ## License

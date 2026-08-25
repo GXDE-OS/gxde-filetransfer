@@ -2,7 +2,7 @@ Source: gxde-filetransfer
 Section: net
 Priority: optional
 Maintainer: GXDE Team <team@gxde.org>
-Build-Depends: debhelper-compat (= 13), qtbase5-dev, qttools5-dev-tools, pkg-config, libdtkwidget2-dev | libdtkwidget-dev, libdtkcore2-dev | libdtkcore-dev
+Build-Depends: debhelper-compat (= 13), qt6-base-dev, qt6-tools-dev-tools, pkg-config, libdtk2widget6-dev, libdtk6core-dev
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 

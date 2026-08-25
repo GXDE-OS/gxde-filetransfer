@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-export QT_SELECT=qt5
+export QT_SELECT=6
 
 %:
-	dh $@ --buildsystem=qmake
+	dh $@ --buildsystem=qmake6

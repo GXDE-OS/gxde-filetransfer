@@ -18,7 +18,7 @@ GXDE 文件传输是一个基于 DTK/Qt 的桌面文件传输工具，用于并�
 ## 构建
 
 ```bash
-qmake remote-file-dtk2.pro
+qmake6 remote-file-dtk2.pro
 make -j$(nproc)
 ```
 
@@ -38,8 +38,8 @@ dpkg-buildpackage -us -uc
 
 ## 依赖
 
-- Qt 5 Widgets、Network 和 XML 模块。
-- DTK Widget/Core 开发库。
+- Qt 6 Widgets、Network 和 XML 模块。
+- DTK 2 Widget / DTK 6 Core 开发库（Qt 6 移植版）。
 - 用于远程协议操作的 `curl`。
 
 ## 许可证

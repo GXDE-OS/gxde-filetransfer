@@ -13,14 +13,16 @@ DWIDGET_USE_NAMESPACE
 
 int main(int argc, char *argv[])
 {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     DApplication::setAttribute(Qt::AA_EnableHighDpiScaling, true);
     DApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, true);
+#endif
     DApplication::loadDXcbPlugin();
 
     DApplication app(argc, argv);
     app.setOrganizationName("gxde");
     app.setApplicationName("gxde-filetransfer");
-    app.setApplicationVersion("1.1.0");
+    app.setApplicationVersion("1.2.1");
     const QIcon appIcon(QStringLiteral(":/icons/gxde-filetransfer.svg"));
     app.setWindowIcon(appIcon);
     app.setProductIcon(appIcon);

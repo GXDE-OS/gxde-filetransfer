@@ -1,3 +1,9 @@
+gxde-filetransfer (1.2.1) unstable; urgency=medium
+
+  * Switch to Qt 6 build with DTK 2 widget and core libraries.
+
+ -- shenmo <shenmo@spark-app.store>  Tue, 25 Aug 2026 21:56:32 +0800
+
 gxde-filetransfer (1.2.0) unstable; urgency=medium
 
   * Add "New Folder" context-menu option for local and remote file lists.

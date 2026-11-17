@@ -1,5 +1,5 @@
 # Maintainer: CharOfString <root@charofstring.cc>
-pkgname=gxde-filetransfer-git
+pkgname=gxde-filetransfer
 pkgver=1.2.1
 pkgrel=1
 pkgdesc='GXDE file transfer client'
@@ -7,11 +7,12 @@ arch=('x86_64' 'aarch64')
 url="https://github.com/GXDE-OS/gxde-filetransfer"
 license=('GPL-3.0-or-later')
 # 传输通过 curl 进行，与 debian/control 相同 ・ Transfers go through curl, as in debian/control.
-depends=('dtk2widget-qt6-git' 'dtk6core-git' 'qt6-base' 'curl' 'hicolor-icon-theme' 'libgcc' 'libstdc++'
+depends=('dtk2widget-qt6' 'gxde-dtk6core' 'qt6-base' 'curl' 'hicolor-icon-theme' 'libgcc' 'libstdc++'
          'glibc')
 makedepends=('git' 'pkgconf' 'qt6-tools')
-provides=('gxde-filetransfer')
-conflicts=('gxde-filetransfer')
+provides=("gxde-filetransfer-git=$pkgver")
+conflicts=('gxde-filetransfer-git')
+replaces=('gxde-filetransfer-git')
 source=()
 sha512sums=()
 
